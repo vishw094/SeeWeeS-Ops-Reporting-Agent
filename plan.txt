@@ -8,11 +8,16 @@ Features chosen: #1 (Self-Correction), #3 (Deep-Dive Trend Analysis), #5 (Multi-
 Feature #4 (Human-in-the-loop) implemented as a lightweight add-on built into Feature #1.
 Feature #2 (What-if Simulation) is skipped.
 
+PROGRESS
+  [DONE]    Feature 1 — Self-Correction & Quality Assurance Audit Loop
+  [NEXT]    Feature 3 — Deep-Dive Trend Analysis + Item Master Reconciliation
+  [PENDING] Feature 5 — Multi-Region / Multi-Day Resource Planning
+
 ================================================================================
 WHY THESE 3 (AND NOT THE OTHERS)
 ================================================================================
 
-FEATURE 1 — Self-Correction & Quality Assurance Audit Loop [DO]
+FEATURE 1 — Self-Correction & Quality Assurance Audit Loop [DONE]
   - Graders explicitly call out "self-correction loops" as an example of the
     "non-trivial logic" they are looking for. This is a direct hint.
   - LangGraph conditional edges are purpose-built for cyclic audit patterns.
@@ -20,7 +25,7 @@ FEATURE 1 — Self-Correction & Quality Assurance Audit Loop [DO]
     catch and fix its own mistakes before leadership sees the report.
   - ROI: highest architectural complexity per line of code. Maximum grading signal.
 
-FEATURE 3 — Deep-Dive Trend Analysis + Item Master Reconciliation [DO]
+FEATURE 3 — Deep-Dive Trend Analysis + Item Master Reconciliation [NEXT]
   - The 14-day multi-corridor CSV and Appendix A (Item Master) exist specifically
     for this feature — using them is nearly mandatory.
   - Current csv_tools.py is completely generic (IsolationForest on no numeric cols,
@@ -30,7 +35,7 @@ FEATURE 3 — Deep-Dive Trend Analysis + Item Master Reconciliation [DO]
   - Period-over-Period analysis (Day 0–6 vs Day 7–13) gives real trend signal.
   - Pure Python, no additional LLM calls needed — fast and deterministic.
 
-FEATURE 5 — Multi-Region / Multi-Day Resource Planning [DO]
+FEATURE 5 — Multi-Region / Multi-Day Resource Planning [PENDING]
   - All three required data artifacts are provided:
       * Incoming_shipments_14d_multi_corridor.csv (C1 + C2 shipments)
       * Resource_availability_48h.csv (driver/truck_standard/truck_temp_controlled)
@@ -42,7 +47,7 @@ FEATURE 5 — Multi-Region / Multi-Day Resource Planning [DO]
   - This is the feature that turns the report from generic into corridor-specific
     actionable recommendations for leadership.
 
-FEATURE 4 — Human-in-the-Loop [PARTIAL — built into Feature 1]
+FEATURE 4 — Human-in-the-Loop [PARTIAL — built into Feature 1 — DONE]
   - Full HITL via LangGraph's interrupt_before + update_state works best with
     a web UI or async callback. In a CLI submission it is hard to demo cleanly.
   - However, the SPIRIT of Feature 4 is captured inside Feature 1's audit loop:
@@ -60,24 +65,35 @@ FEATURE 2 — What-if Scenario Simulation [SKIP]
   - Time is better spent making the other three features excellent.
 
 ================================================================================
-CURRENT ARCHITECTURE GAPS (what's broken today)
+ARCHITECTURE GAPS STATUS
 ================================================================================
 
-1. weather_tools.py: single lat/lon → must become per-corridor, per-waypoint
-2. csv_tools.py: no DQ rules, no Item Master lookup, no corridor split, generic
-   IsolationForest will not fire (CSV has no numeric cols beyond booleans)
-3. graph.py: fully linear, no conditional edges, no cycles, no parallel nodes
-4. prompts.py: generic, not grounded in playbook penalty model or audit rules
-5. main.py: still points to old single-corridor CSV and old PDF
+  [DONE]    graph.py: linear → cyclic (audit loop + conditional edges)
+  [DONE]    prompts.py: added AUDIT_PROMPT (6 playbook rules, JSON output)
+  [DONE]    agents.py: added run_audit_agent(), updated planner + report agents
+  [NEXT]    csv_tools.py / dq_tools.py: no DQ rules, no Item Master, no corridor KPIs
+  [NEXT]    trend_tools.py: PoP analysis, corridor comparison (new file)
+  [PENDING] weather_tools.py: single lat/lon → per-corridor, per-waypoint (9 total)
+  [PENDING] resource_tools.py: resource allocation with penalty model (new file)
+  [PENDING] main.py: still points to old single-corridor CSV and old PDF
 
 ================================================================================
-NEW ARCHITECTURE (LangGraph Graph)
+TARGET ARCHITECTURE (LangGraph Graph)
 ================================================================================
 
-Current (linear):
-  pdf_context → csv_analysis → weather → planner → report → email
+Current after Feature 1 (cyclic, but not yet parallel):
+  pdf_context → csv_analysis → weather → planner → audit
+                                                       │
+                              ┌────────── retry ───────┘
+                              │           │ escalate
+                              │           ▼
+                              │     human_checkpoint
+                              │           │
+                              └── approved ┘
+                                          │
+                                        report → email
 
-New (multi-agent, cyclic, parallel):
+Final target after Features 3 + 5 (cyclic + parallel):
 
   pdf_context
       │
@@ -97,389 +113,227 @@ New (multi-agent, cyclic, parallel):
            (Feature 5b)
            - Load Resource_availability_48h.csv
            - Compute required trucks/drivers per corridor per day
-             using playbook truck capacity model
            - Solve allocation: minimize total penalty score
-             (Tier1=100, Tier2=40, cold-chain=+80, delay=10)
            - Output: allocation plan + penalty breakdown
                      │
                      ▼
-                node_planner
-                - Receives: business_context, dq_report, trend_analysis,
-                  weather_risk_by_corridor, resource_allocation
-                - Outputs: dispatch plan (corridor-specific, 48h)
+                node_planner  ◄──── retry (with violations)
                      │
                      ▼
-               node_audit          ← Feature 1 + Feature 4 lite
-               - AuditAgent checks plan against playbook rules:
-                   * Risk score 3 → escalation required?
-                   * SLA violations flagged?
-                   * Cold-chain items on wrong truck type?
-                   * Tier 1 units in under-resourced corridors?
-                   * Travel buffer correctly applied?
-               - Returns: {passed: bool, violations: list, severity: str}
+               node_audit
                      │
-          ┌──────────┴──────────┐
-          │ passed=True          │ passed=False AND retries < 3
-          │                      ▼
-          │               [back to node_planner]
-          │               with violations injected into state
-          │
-          │ passed=False AND retries == 3 AND score==3
-          │               ▼
-          │         node_human_checkpoint   (Feature 4 lite)
-          │         - Print structured escalation to stdout
-          │         - Prompt for manager approval (stdin)
-          │         - If approved → proceed to report
-          │         - If rejected → halt with error report
-          │
-          ▼
-      node_report
-      - Full corridor comparison table
-      - DQ summary (excluded rows, reason codes)
-      - Trend analysis (PoP highlights)
-      - Weather risk per corridor per day
-      - Resource allocation table + penalty score
-      - SLA risk flags
-      - Executive narrative (decision-oriented)
-          │
-          ▼
-      node_email
+          ┌──────────┴────────────────┐
+          │ approved                  │ escalate (retries=3, score=3)
+          │                           ▼
+          │                   node_human_checkpoint
+          │                           │
+          └───────────────────────────┘
+                     │
+                     ▼
+                node_report → node_email
 
 ================================================================================
-LANGGRAPH STATE SCHEMA (AppState additions)
+FEATURE 1 — COMPLETED CHANGES
+================================================================================
+
+src/prompts.py
+  - PLANNER_PROMPT: added {audit_violations} slot — planner sees exact violations
+    to fix on each retry; system instruction updated to require explicit resolution
+  - AUDIT_PROMPT (NEW): 6 playbook-grounded checks, returns strict JSON
+    {passed: bool, violations: list, severity: low|medium|high|critical}
+    Checks: escalation on score>=3, Tier 1 SLA 6h window, cold-chain truck
+    assignment, DQ exclusion not counted in volumes, resource constraints
+    acknowledged, Tier 1 prioritized over Tier 2
+  - REPORT_PROMPT: added {audit_trail} slot + instruction to render Audit Trail
+    section in the final HTML report
+
+src/agents.py
+  - Added imports: json, List
+  - run_planner_agent(): new optional audit_violations: List[str] param
+  - run_audit_agent() (NEW): calls AUDIT_PROMPT, parses JSON response, falls back
+    gracefully on parse error (returns passed=False, severity=high)
+  - run_report_agent(): new optional audit_trail: str param
+
+src/graph.py
+  - AppState: 4 new fields — audit_retries (int), audit_violations (List[str]),
+    audit_passed (bool), human_approved (bool)
+  - node_audit (NEW): calls run_audit_agent, prints result + violations to console,
+    increments retry counter in state
+  - node_human_checkpoint (NEW): Feature 4 lite — prints structured escalation
+    block with risk score + violations, prompts stdin for manager approval, raises
+    RuntimeError if denied
+  - node_planner: now passes audit_violations into run_planner_agent on retries
+  - node_report: builds audit_trail string from state before calling run_report_agent
+  - route_audit() (NEW): conditional edge logic
+      * passed=True          → "approved" → report
+      * retries<3, not passed → "retry"   → planner (with violations)
+      * retries>=3, score>=3  → "escalate" → human_checkpoint
+      * retries>=3, score<3   → "approved" → report (with warnings)
+  - build_graph(): wired new nodes; planner→audit→(conditional)→planner/checkpoint/report
+
+================================================================================
+FEATURE 3 — IMPLEMENTATION PLAN (NEXT)
+================================================================================
+
+NEW FILE: src/tools/dq_tools.py
+  - load_item_master()   → DataFrame from hardcoded Appendix A.1 constants
+  - load_alias_table()   → DataFrame from hardcoded Appendix A.2
+  - load_legacy_table()  → DataFrame from hardcoded Appendix A.3
+  - reconcile_shipments(df) → (clean_df, dq_report)
+    Decision tree per row (D1–D8):
+      1. unique_item_id null/empty → DQ-01, exclude, reason="excluded_dq01_missing_uid"
+      2. (item_id, item_name) exact match in A.1 → reason="exact_match"
+      3. item_id matches A.1 but item_name mismatches → DQ-03, reason="dq03_name_mismatch"
+         → try alias table for suggestion
+      4. item_name matches A.2 alias → reason="alias_match", map canonical_item_id
+      5. item_id matches A.3 legacy → reason="legacy_id_map", map canonical_item_id
+      6. item_id not in master or legacy → DQ-02, reason="excluded_dq02_invalid_id"
+      7. Duplicate unique_item_id → DQ-04, reason="dq04_duplicate_uid"
+      8. Every row gets: canonical_item_id, reason_code, confidence_tier, temp_control
+    dq_report = {total_rows, excluded_count, flagged_count,
+                 reason_code_breakdown, excluded_rows_sample}
+
+NEW FILE: src/tools/trend_tools.py
+  - compute_corridor_kpis(df, corridor_id) → Dict
+      * volume: total valid unique_item_id count
+      * exclusion_rate: excluded / total
+      * cold_chain_count: rows where temp_control in (Cold 2-8C, Strict Cold Chain)
+      * cold_chain_pct: cold_chain_count / volume
+      * trucks_std_required: ceil(room_temp_volume * 1.10 / 10)
+      * trucks_temp_required: ceil(cold_chain_volume * 1.10 / 10)
+      * drivers_required: trucks_std + trucks_temp
+  - compute_pop_trend(df) → Dict
+      * Split: period_A = planning_day 0–6, period_B = planning_day 7–13
+      * KPIs for each period per corridor
+      * Delta table: absolute + percentage change per KPI
+  - compare_corridors(df) → Dict
+      * Side-by-side KPI dict: {C1: kpis, C2: kpis, delta: ...}
+
+MODIFIED: src/agents.py
+  - run_trend_agent(trend_analysis, dq_report, corridor_comparison) → str
+    Uses new TREND_OPS_PROMPT, replaces generic OPS_ANALYSIS_PROMPT for new CSV
+
+MODIFIED: src/prompts.py
+  - TREND_OPS_PROMPT (NEW): corridor-grounded prompt with PoP deltas and DQ summary
+    Returns: key findings per corridor, DQ highlights, trend direction, actions
+
+MODIFIED: src/graph.py
+  - Replace node_csv_analysis with node_dq_reconcile
+    * Calls reconcile_shipments() from dq_tools
+    * Calls compute_pop_trend() and compare_corridors() from trend_tools
+    * Calls run_trend_agent() for ops_insights
+    * Returns: dq_report, canonical_df_json, trend_analysis, ops_insights
+
+MODIFIED: src/main.py
+  - csv_path → data-for-enhancement/Incoming_shipments_14d_multi_corridor.csv
+
+================================================================================
+FEATURE 5 — IMPLEMENTATION PLAN (PENDING)
+================================================================================
+
+NEW FILE: src/tools/resource_tools.py
+  - load_resource_availability(csv_path) → Dict[str, Dict]
+    Format: {day_label: {driver: N, truck_standard: N, truck_temp_controlled: N}}
+  - compute_demand(canonical_df, corridor_sla_map) → Dict
+    Per corridor per planning_day:
+      * valid_units (total unique_item_id after DQ)
+      * cold_chain_units (temp_control requires temp truck)
+      * room_temp_units = valid_units - cold_chain_units
+      * trucks_std_needed = ceil(room_temp_units * 1.10 / 10)
+      * trucks_temp_needed = ceil(cold_chain_units * 1.10 / 10)
+      * drivers_needed = trucks_std_needed + trucks_temp_needed
+  - allocate_resources(demand, availability) → Dict
+    Greedy by penalty priority per day:
+      1. Tier 1 cold-chain first (Tier1 SLA violation=100 + cold-chain=80 = 180/unit)
+      2. Tier 1 room-temp (100/unit)
+      3. Tier 2 cold-chain (40 + 80 = 120/unit)
+      4. Tier 2 room-temp (40/unit)
+      5. Non-SLA delays (10/unit)
+    Returns: {corridor: {day: {allocated, unmet, penalty}}, total_penalty}
+
+MODIFIED: src/tools/weather_tools.py
+  - get_corridor_weather(corridor_id, waypoints, tz) → Dict
+    * Iterate all waypoints, fetch Open-Meteo per waypoint
+    * Waypoint score = sum of triggered conditions (precip>=15, gusts>=45, tmin<=0)
+    * Corridor day risk = MAX(waypoint scores) for that day
+    * 48h corridor risk = MAX(Day0, Day1 corridor risk)
+    * travel_buffer: 0→0%, 1→10%, 2→25%, 3→40%+escalation
+  - get_all_corridors_weather() → Dict
+    Hard-coded waypoints from playbook:
+      C1_I95_NJ_BOS: 5 waypoints (Newark, Bronx, New Haven, Providence, Boston)
+      C2_NJ_PHL: 4 waypoints (Newark, New Brunswick, Trenton, Philadelphia)
+    Returns: {C1_I95_NJ_BOS: {day0, day1, risk_48h, travel_buffer, waypoint_detail},
+              C2_NJ_PHL: {day0, day1, risk_48h, travel_buffer, waypoint_detail}}
+
+MODIFIED: src/agents.py
+  - run_resource_planner_agent(resource_allocation, penalty_breakdown,
+                                weather_risk_by_corridor) → str
+    Uses RESOURCE_PLANNER_PROMPT to explain allocation in plain English
+
+MODIFIED: src/prompts.py
+  - RESOURCE_PLANNER_PROMPT (NEW): explains allocation with penalty arithmetic,
+    corridor prioritization rationale, SLA risk flags
+  - Updated REPORT_PROMPT: full 8-section structure with corridor comparison table
+
+MODIFIED: src/graph.py
+  - Replace node_weather with node_weather_multi_corridor
+  - Add node_resource_allocator between weather+DQ fan-in and planner
+  - Add parallel fan-out: pdf_context → [node_dq_reconcile, node_weather_multi_corridor]
+  - AppState additions: weather_risk_by_corridor, resource_availability,
+    resource_allocation, penalty_breakdown, resource_csv_path
+
+MODIFIED: src/main.py
+  - Add resource_csv_path → data-for-enhancement/Resource_availability_48h.csv
+  - Update pdf_path if using the Dispatch Playbook markdown instead of old PDF
+
+================================================================================
+LANGGRAPH STATE SCHEMA (final target)
 ================================================================================
 
 class AppState(TypedDict, total=False):
-    # existing
+    # inputs
     pdf_path: str
     csv_path: str
-    resource_csv_path: str           # NEW
+    resource_csv_path: str
+
+    # Feature 1 (DONE)
     business_context: str
-
-    # Feature 3 additions
-    dq_report: Dict[str, Any]        # excluded rows, reason codes, counts
-    canonical_df_json: str           # reconciled DataFrame as JSON
-    trend_analysis: Dict[str, Any]   # PoP metrics per corridor
-
-    # Feature 5 additions
-    weather_risk_by_corridor: Dict[str, Any]   # {C1: {day0: score, day1: score, risk_48h: score}, C2: ...}
-    resource_availability: Dict[str, Any]      # from CSV
-    resource_allocation: Dict[str, Any]        # computed allocation plan
-    penalty_breakdown: Dict[str, Any]          # per corridor per day
-
-    # existing
     ops_insights: str
     dispatch_plan: str
-
-    # Feature 1 additions
-    audit_retries: int               # cycle counter
-    audit_violations: List[str]      # list of rule violation strings
+    audit_retries: int
+    audit_violations: List[str]
     audit_passed: bool
-    human_approved: bool             # Feature 4 lite
-
+    human_approved: bool
     report_html: str
 
-================================================================================
-FILES TO CREATE / MODIFY
-================================================================================
+    # Feature 3 (NEXT)
+    dq_report: Dict[str, Any]
+    canonical_df_json: str
+    trend_analysis: Dict[str, Any]
 
-NEW FILES:
-  src/tools/dq_tools.py
-    - load_item_master()         → canonical DataFrame from playbook constants
-    - load_alias_table()         → Appendix A.2
-    - load_legacy_table()        → Appendix A.3
-    - reconcile_shipments(df)    → apply D1–D8 decision rules, return (clean_df, dq_report)
-      * DQ-01: missing unique_item_id → exclude, log
-      * DQ-02: item_id not in master → flag for investigation
-      * DQ-03: item_name mismatch for valid item_id → flag
-      * DQ-04: duplicate unique_item_id → flag
-      * Alias match (A.2) → ALIAS_MATCH
-      * Legacy ID map (A.3) → LEGACY_ID_MAP
-      * Assign canonical_item_id and reason_code to every row
-
-  src/tools/trend_tools.py
-    - compute_corridor_kpis(df, corridor_id)
-        * volume (total unique_item_id count after DQ)
-        * exclusion_rate (excluded / total)
-        * tier1_pct, tier2_pct (based on corridor SLA tier from playbook)
-        * cold_chain_pct (temp_control == Cold or Strict)
-        * trucks_required (playbook formula: ceil(volume * 1.10 / 10))
-    - compute_pop_trend(df)
-        * Split 14-day window: period_A = Day 0–6, period_B = Day 7–13
-        * Compute KPIs for each period per corridor
-        * Return delta table (absolute and percentage change)
-    - compare_corridors(df)
-        * Side-by-side KPI table: C1 vs C2
-
-  src/tools/resource_tools.py
-    - load_resource_availability(csv_path) → Dict[day, {driver, truck_std, truck_temp}]
-    - compute_demand(canonical_df, weather_risk_by_corridor)
-        * Required drivers per corridor per day
-        * Required truck_standard and truck_temp_controlled per corridor per day
-        * Apply packing inefficiency buffer (+10%)
-    - allocate_resources(demand, availability)
-        * Greedy allocation: prioritize Tier 1 corridors first, then Tier 2
-        * Apply penalty model from playbook Section 13.2
-        * Return allocation plan + total penalty score + per-unit breakdown
-        * Tiebreaker: fewer Tier 1 units impacted
-
-MODIFIED FILES:
-  src/tools/weather_tools.py
-    - get_corridor_weather(corridor_id, waypoints, tz)
-        * Iterate all waypoints for a corridor
-        * Fetch Open-Meteo daily forecast per waypoint
-        * Compute waypoint risk score (0–3) per day
-        * Corridor day risk = MAX(waypoint scores) for that day
-        * 48h corridor risk = MAX(Day0 risk, Day1 risk)
-    - get_all_corridors_weather(playbook_corridors)
-        * Returns {C1_I95_NJ_BOS: {day0, day1, risk_48h}, C2_NJ_PHL: {day0, day1, risk_48h}}
-
-  src/graph.py
-    - New nodes: node_dq_reconcile, node_weather_multi_corridor,
-                 node_resource_allocator, node_audit, node_human_checkpoint
-    - Parallel fan-out: pdf_context → [node_dq_reconcile, node_weather_multi_corridor]
-    - Fan-in: both → node_resource_allocator
-    - Conditional edge on audit:
-        add_conditional_edges("audit", route_audit, {
-            "retry":     "planner",
-            "escalate":  "human_checkpoint",
-            "approved":  "report",
-        })
-    - State includes audit_retries counter to cap the cycle at 3
-
-  src/agents.py
-    - run_audit_agent(dispatch_plan, business_context, weather_risk_by_corridor,
-                      resource_allocation, audit_retries) → AuditResult
-    - run_trend_agent(trend_analysis, dq_report) → str (ops_insights, replaces old ops agent)
-    - run_resource_planner_agent(resource_allocation, penalty_breakdown,
-                                  weather_risk_by_corridor) → str (structured plan section)
-
-  src/prompts.py
-    - AUDIT_PROMPT: checks plan against 6 explicit playbook rules with structured output
-    - TREND_OPS_PROMPT: replaces OPS_ANALYSIS_PROMPT, grounded in corridor KPIs and PoP deltas
-    - RESOURCE_PLANNER_PROMPT: explains allocation decisions with penalty arithmetic
-    - Updated REPORT_PROMPT: includes corridor comparison table, DQ summary, trend section
-
-  src/main.py
-    - Update csv_path → data-for-enhancement/Incoming_shipments_14d_multi_corridor.csv
-    - Add resource_csv_path → data-for-enhancement/Resource_availability_48h.csv
-    - Update pdf_path → SeeWeeS Specialty Dispatch Playbook.md (or existing PDF)
+    # Feature 5 (PENDING)
+    weather_risk_by_corridor: Dict[str, Any]
+    resource_availability: Dict[str, Any]
+    resource_allocation: Dict[str, Any]
+    penalty_breakdown: Dict[str, Any]
 
 ================================================================================
-LANGGRAPH CONDITIONAL EDGE LOGIC (Feature 1 detail)
+IMPLEMENTATION ORDER — STATUS
 ================================================================================
 
-def route_audit(state: AppState) -> str:
-    retries = state.get("audit_retries", 0)
-    passed  = state.get("audit_passed", False)
-    score   = state.get("weather_risk_by_corridor", {})
-    max_risk = max(v.get("risk_48h", 0) for v in score.values()) if score else 0
-
-    if passed:
-        return "approved"
-    if retries >= 3 and max_risk >= 3:
-        return "escalate"        # → human_checkpoint
-    if retries >= 3:
-        return "approved"        # max retries hit, proceed with warnings
-    return "retry"               # → back to planner
-
-AuditAgent prompt checks (structured JSON output):
-  1. If risk_score == 3, does plan include "+40% buffer" AND "escalation"?
-  2. Are all Tier 1 SLA units dispatched within 6h window?
-  3. Are cold-chain items assigned to temp-controlled trucks only?
-  4. Are DQ-excluded rows NOT counted in truck volume calculations?
-  5. Does resource allocation reflect actual availability constraints?
-  6. Is corridor penalty score minimized (Tier 1 prioritized over Tier 2)?
-
-================================================================================
-ITEM MASTER RECONCILIATION LOGIC (Feature 3 detail)
-================================================================================
-
-Decision tree per shipment row (D1–D8 from Appendix A.6):
-
-  1. If unique_item_id is null/empty:
-       → DQ-01: exclude row, reason_code = "excluded_dq01_missing_uid"
-
-  2. Check (item_id, item_name) against Canonical Table (A.1):
-       → Exact match on both → reason_code = "exact_match", assign canonical_item_id
-
-  3. If item_id matches but item_name mismatches:
-       → DQ-03: flag row, reason_code = "dq03_name_mismatch"
-       → Try alias table (A.2) on item_name for suggestion
-
-  4. If item_name matches alias table (A.2):
-       → reason_code = "alias_match", assign canonical_item_id
-
-  5. If item_id not in master but matches legacy table (A.3):
-       → reason_code = "legacy_id_map", assign canonical_item_id, log as fixed
-
-  6. If item_id not in master, not in legacy:
-       → DQ-02: flag row, reason_code = "excluded_dq02_invalid_id"
-
-  7. Check for duplicate unique_item_id across the dataframe:
-       → DQ-04: flag all duplicates, reason_code = "dq04_duplicate_uid"
-
-  8. All modified rows get: canonical_item_id, reason_code, confidence_tier
-
-Output: (clean_df, dq_report)
-  dq_report = {
-    "total_rows": int,
-    "excluded_count": int,
-    "flagged_count": int,
-    "reason_code_breakdown": {reason_code: count},
-    "excluded_rows_sample": [...first 10...],
-  }
-
-================================================================================
-RESOURCE ALLOCATION LOGIC (Feature 5 detail)
-================================================================================
-
-Inputs:
-  - resource_availability: {day: {driver: N, truck_standard: N, truck_temp: N}}
-  - demand per corridor per day:
-      * total_volume_C1_day0, total_volume_C2_day0 (from reconciled canonical_df)
-      * trucks_std_needed = ceil(room_temp_volume * 1.10 / 10)
-      * trucks_temp_needed = ceil(cold_chain_volume * 1.10 / 10)
-      * drivers_needed = trucks_std + trucks_temp (1 driver per truck)
-
-Allocation algorithm:
-  For each day (Day0, Day1):
-    1. Compute total demand across C1 + C2
-    2. If supply >= demand → full allocation, penalty = 0
-    3. If supply < demand → must shortfall someone:
-       a. Sort corridors by SLA tier (Tier 1 first) and penalty cost
-       b. Satisfy Tier 1 corridors first (cold-chain within Tier 1 first)
-       c. Allocate remaining to Tier 2
-       d. Compute penalty for each unmet unit using playbook penalty table
-    4. Record: {corridor: {allocated_drivers, allocated_std_trucks,
-                            allocated_temp_trucks, unmet_units, penalty}}
-
-Total penalty = sum of all penalties across corridors and days.
-Tiebreaker: if two plans tie → prefer fewer Tier 1 units impacted.
-
-================================================================================
-MULTI-CORRIDOR WEATHER (Feature 5 detail)
-================================================================================
-
-Corridor C1_I95_NJ_BOS — 5 waypoints:
-  C1_W1: Newark NJ      (40.7357, -74.1724)
-  C1_W2: Bronx NY       (40.8448, -73.8648)
-  C1_W3: New Haven CT   (41.3083, -72.9279)
-  C1_W4: Providence RI  (41.8240, -71.4128)
-  C1_W5: Boston MA      (42.3601, -71.0589)
-
-Corridor C2_NJ_PHL — 4 waypoints:
-  C2_W1: Newark NJ      (40.7357, -74.1724)
-  C2_W2: New Brunswick  (40.4862, -74.4518)
-  C2_W3: Trenton NJ     (40.2204, -74.7643)
-  C2_W4: Philadelphia   (39.9526, -75.1652)
-
-Per waypoint: fetch precipitation_sum, wind_gusts_10m_max, temperature_2m_min
-Waypoint risk score (0–3):
-  +1 if precipitation_sum >= 15.0 mm/day
-  +1 if wind_gusts_10m_max >= 45.0 km/h
-  +1 if temperature_2m_min <= 0.0 °C
-
-Corridor day risk = MAX(waypoint risk scores) for that day
-48h corridor risk = MAX(Day0 risk, Day1 risk)
-
-Travel buffer from risk score (per playbook Section 5.2):
-  0 → no buffer
-  1 → +10%
-  2 → +25%
-  3 → +40% + escalation required
-
-================================================================================
-REPORT STRUCTURE (executive-ready)
-================================================================================
-
-Section 1: Executive Summary
-  - Top 3 risks for the 48h horizon
-  - Go/No-go recommendation per corridor
-  - Total penalty score and what drove it
-
-Section 2: Corridor Comparison Table
-  | Metric               | C1 (NJ→BOS) | C2 (NJ→PHL) |
-  |----------------------|-------------|-------------|
-  | Valid shipments      |             |             |
-  | Excluded (DQ)        |             |             |
-  | Tier 1 units         |             |             |
-  | Cold-chain units     |             |             |
-  | Trucks required      |             |             |
-  | Weather risk (48h)   |             |             |
-  | Travel buffer        |             |             |
-  | Allocation status    |             |             |
-  | Penalty score        |             |             |
-
-Section 3: Data Quality Summary
-  - Excluded row count + reason code breakdown
-  - Legacy/alias IDs resolved
-  - Any UNRESOLVED_CONFLICT flags
-
-Section 4: Trend Analysis (Period-over-Period)
-  - Day 0–6 vs Day 7–13 per corridor
-  - Volume trend, exclusion rate trend, cold-chain mix shift
-
-Section 5: Weather Risk Detail
-  - Per corridor, per waypoint, per day
-  - Which waypoints triggered which conditions
-
-Section 6: Resource Allocation Plan
-  - Day 0 and Day 1 allocation table
-  - Penalty arithmetic (shown explicitly)
-  - Recommended prioritization rationale
-
-Section 7: Dispatch Plan (from PlannerAgent, post-audit)
-  - Corridor-specific actions
-  - SLA risk flags
-  - Contingency triggers
-
-Section 8: Audit Trail
-  - Number of audit cycles
-  - Violations found and corrected
-  - Human escalation status
-
-================================================================================
-IMPLEMENTATION ORDER (suggested coding sequence)
-================================================================================
-
-Step 1: src/tools/dq_tools.py
-  - Hardcode item master, alias, legacy tables from playbook
-  - Implement reconcile_shipments() with all 8 decision rules
-  - Test on the multi-corridor CSV manually
-
-Step 2: src/tools/trend_tools.py
-  - compute_corridor_kpis() using reconciled df
-  - compute_pop_trend() comparing two 7-day windows
-  - compare_corridors() for side-by-side table
-
-Step 3: src/tools/weather_tools.py (rewrite)
-  - get_corridor_weather() iterating all waypoints
-  - get_all_corridors_weather() for both corridors
-
-Step 4: src/tools/resource_tools.py
-  - load_resource_availability()
-  - compute_demand() from reconciled df
-  - allocate_resources() with penalty model
-
-Step 5: src/prompts.py
-  - AUDIT_PROMPT (most important — drives Feature 1 quality)
-  - TREND_OPS_PROMPT
-  - RESOURCE_PLANNER_PROMPT
-  - Updated REPORT_PROMPT with all new sections
-
-Step 6: src/agents.py
-  - run_audit_agent()
-  - run_trend_agent()
-  - run_resource_planner_agent()
-
-Step 7: src/graph.py (the integration step)
-  - Rewrite with new nodes and conditional edges
-  - Test the audit loop cycle manually
-
-Step 8: src/main.py
-  - Update paths to new data files
-  - End-to-end smoke test
+  [DONE]  Step 1: src/prompts.py — AUDIT_PROMPT, updated PLANNER_PROMPT + REPORT_PROMPT
+  [DONE]  Step 2: src/agents.py — run_audit_agent(), updated planner + report agents
+  [DONE]  Step 3: src/graph.py — audit nodes, route_audit(), conditional edges
+  [NEXT]  Step 4: src/tools/dq_tools.py — Item Master reconciliation (DQ-01..04, D1–D8)
+  [NEXT]  Step 5: src/tools/trend_tools.py — PoP analysis, corridor KPI comparison
+  [NEXT]  Step 6: src/agents.py — run_trend_agent() + TREND_OPS_PROMPT
+  [NEXT]  Step 7: src/graph.py — replace node_csv_analysis with node_dq_reconcile
+  [NEXT]  Step 8: src/main.py — update csv_path to multi-corridor CSV
+  [PEND]  Step 9: src/tools/weather_tools.py — rewrite for 9 waypoints, 2 corridors
+  [PEND]  Step 10: src/tools/resource_tools.py — demand + penalty-minimizing allocator
+  [PEND]  Step 11: src/agents.py — run_resource_planner_agent() + RESOURCE_PLANNER_PROMPT
+  [PEND]  Step 12: src/graph.py — parallel fan-out, resource allocator node, final wiring
+  [PEND]  Step 13: src/main.py — add resource_csv_path, final end-to-end smoke test
 
 ================================================================================
 KEY DESIGN DECISIONS & RATIONALE
@@ -500,7 +354,7 @@ KEY DESIGN DECISIONS & RATIONALE
    does it properly justify buffer choices?) — this is where LLM judgment adds
    value that rule-based code cannot replicate.
 
-4. Parallel fan-out for DQ + weather:
+4. Parallel fan-out for DQ + weather (Feature 5):
    These two nodes are independent (DQ reads CSV, weather calls Open-Meteo).
    Running them in parallel cuts latency. LangGraph supports this natively.
 
@@ -509,15 +363,15 @@ KEY DESIGN DECISIONS & RATIONALE
    After 3 failures with score < 3, proceed with audit warnings in report.
 
 ================================================================================
-WHAT THIS SCORES WELL ON (grading rubric mapping)
+GRADING RUBRIC MAPPING
 ================================================================================
 
-- Non-trivial architecture: cyclic audit loop + parallel fan-out ✓
-- Human-in-the-loop: escalation checkpoint on score=3 max retries ✓
+- Non-trivial architecture: cyclic audit loop (DONE) + parallel fan-out (pending) ✓
+- Human-in-the-loop: escalation checkpoint on score=3 after max retries (DONE) ✓
 - Data grounding: all KPIs and rules trace directly to playbook sections ✓
-- Meaningful analytics: PoP trend + corridor comparison + penalty model ✓
+- Meaningful analytics: PoP trend + corridor comparison + penalty model (pending) ✓
 - Executive storytelling: structured 8-section report with Go/No-go ✓
 - Reproducibility: deterministic DQ + resource allocation (no randomness) ✓
-- Technical methodology: new nodes, conditional edges, typed state schema ✓
+- Technical methodology: new nodes, conditional edges, typed state schema (DONE) ✓
 
 ================================================================================
