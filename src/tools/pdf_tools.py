@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 
 
 @dataclass
@@ -26,7 +26,6 @@ class PdfRag:
 
         # Workshop-friendly: always add chunks (wipe chroma_db if you want clean runs)
         vectordb.add_documents(chunks)
-        vectordb.persist()
         return vectordb
 
     def retriever(self, vectordb: Chroma, k: int = 6):
