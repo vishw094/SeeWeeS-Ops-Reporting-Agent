@@ -10,8 +10,52 @@ Feature #2 (What-if Simulation) is skipped.
 
 PROGRESS
   [DONE]    Feature 1 — Self-Correction & Quality Assurance Audit Loop
+            (now hardened: deterministic audit checks + structured-JSON planner)
   [DONE]    Feature 3 — Deep-Dive Trend Analysis + Item Master Reconciliation
+            (now includes item-spike analysis + deep-dive appendix)
+  [DONE]    Cross-project merge — adopted 4 stronger ideas from a peer build
+            (deterministic audit, RAG eval, deep-dive appendix, unit tests)
+  [DONE]    Data-leakage audit — secrets clean, analytics leak-free
   [NEXT]    Feature 5 — Multi-Region / Multi-Day Resource Planning
+
+================================================================================
+POST-FEATURE-3 MERGE (2026-05-21) — what changed and why
+================================================================================
+
+A peer SeeWeeS build was compared file-by-file; its genuinely stronger ideas
+were ported in while keeping our advantages. Full detail in
+FEATURE_3_WORKLOG.txt sections 8-9. Summary:
+
+  ADOPTED
+    - Deterministic audit + structured-JSON planner. PLANNER_PROMPT emits
+      JSON (recommended_buffer_pct, escalation_required, cited_rules, ...);
+      graph.apply_deterministic_audit_checks() hard-verifies buffer %, the
+      score-3 escalation rule, and rule citations on top of the LLM audit.
+      Self-correction is now verifiable, not vibes-based.
+    - RAG retrieval evaluation (src/tools/knowledge_tools.py): Recall@k +
+      grounded-answer accuracy, printed every run (currently 1.0 / 1.0).
+    - Deep-dive analytics appendix: item spikes + corridor/correction/
+      exclusion breakdowns, rendered as HTML + emailed text attachment.
+    - Section-aware markdown RAG indexing (policy vs reference streams).
+    - Lazy LLM init (_get_llm) so modules import without OPENAI_API_KEY.
+    - Unit test suite (tests/, 21 passing).
+
+  KEPT OURS (peer's was weaker)
+    - Vectorized DQ reconciliation (peer used row-by-row iterrows).
+    - business_context caching (peer re-ran the context LLM every run).
+    - Chroma wipe-on-fingerprint-change (peer accumulated collections).
+    - Per-node @_timed timing + LangSmith key probe + Windows crash handling.
+
+  DATA-LEAKAGE AUDIT
+    - Secrets/PII: clean. No tracked .env, no hardcoded keys, .gitignore OK.
+    - Hygiene fix: report_output.html / report_appendix.txt added to
+      .gitignore (report_output.html already tracked — `git rm --cached` to
+      stop tracking).
+    - Flag: peer repo outputs/sample_report Gmail PDF may contain a real
+      email — confirm redaction before sharing.
+    - Analytical: no ML training, so no train/test leakage. Item-spike and
+      PoP baselines use ONLY History rows; planning-window data never feeds
+      the baseline (verified disjoint partitions).
 
 ================================================================================
 WHY THESE 3 (AND NOT THE OTHERS)

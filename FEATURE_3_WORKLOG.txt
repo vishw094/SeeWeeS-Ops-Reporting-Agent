@@ -1,0 +1,500 @@
+================================================================================
+  FEATURE 3 WORK LOG — Deep-Dive Trend Analysis + Item Master Reconciliation
+  SeeWeeS Ops Reporting Agent — UCLA MSBA AI Agents Project Challenge 2026
+  Completed: 2026-05-21
+================================================================================
+
+
+1. SCOPE
+--------------------------------------------------------------------------------
+Transform the legacy generic-CSV analysis node into a corridor-aware
+deterministic DQ + trend pipeline, grounded directly in the SeeWeeS
+Specialty Dispatch Playbook (Appendix A and §7, §11, §13).
+
+What was previously a "run IsolationForest on whatever numeric columns
+happen to be present" call became a strict, playbook-faithful reconciler
+that produces auditable, gradable numbers.
+
+
+2. WORK DELIVERED
+--------------------------------------------------------------------------------
+
+  src/tools/dq_tools.py            NEW
+    - Hard-coded Appendix A.1 (11 canonical items), A.2 (7 aliases),
+      A.3 (4 legacy mappings) — single source of truth, no external CSV.
+    - _normalize_name(): lowercase + strip parenthetical clutter + collapse
+      non-alphanumerics → both alias matches and exact matches share one
+      canonical form (e.g. "Pembrolizumab (Keytruda)" ↔ "Pembrolizumab").
+    - _resolve_row(): vectorized D3 → D4 → D5 → D6 → DQ-02 precedence,
+      memoized via a (item_id, item_name) cache so repeated SKUs are
+      resolved O(1).
+    - reconcile_shipments(df) → ReconcileResult:
+        * Annotates every row with canonical_item_id, canonical_item_name,
+          medicine_type, temp_control, product_class, reason_code,
+          confidence_tier, sla_tier (back-filled), is_valid.
+        * Returns reconciled DataFrame, valid subset, and a structured
+          report (DQ-01..DQ-04 counts, by-corridor breakdown, sample of
+          excluded rows).
+    - Lazy _LOOKUPS_CACHE — pandas table construction is deferred to first
+      call, sidestepping a Windows DLL ordering issue (see §3.2 below).
+    - Hardened __main__ block: `python -m tools.dq_tools <csv>` prints the
+      full DQ report for fast manual verification.
+
+  src/tools/trend_tools.py         NEW
+    - required_trucks(volume) implementing the §7.2 capacity model:
+        required_trucks = ceil(volume * 1.10 / 10)
+    - compute_corridor_kpis(df, corridor_id): separate KPI blocks for the
+      48h planning window (Day0 + Day1), full history, and overall.
+        * volume, exclusion_rate
+        * cold-chain / room-temp / controlled split
+        * Tier 1 / Tier 2 split (driven by the back-filled sla_tier column,
+          falls back to assign_tier() when raw rows are passed in)
+        * trucks_standard_required, trucks_temp_required, drivers_required
+    - compute_pop_trend(df): Period-over-Period analysis. Splits History
+      rows by shipment_date midpoint into period A vs period B and emits
+      absolute + percent deltas per corridor across the canonical KPI set.
+    - compare_corridors(df): side-by-side KPI dict for C1_I95_NJ_BOS vs
+      C2_NJ_PHL across planning window / history / overall.
+    - compute_trend_payload(df): one-call bundle used by the graph node.
+
+  src/prompts.py                   MODIFIED
+    - Added TREND_OPS_PROMPT — corridor-grounded narrative prompt with a
+      strict "DO NOT invent numbers. Quote the inputs verbatim" instruction.
+      Returns a 5-section markdown brief: headline KPIs, DQ findings,
+      trend direction (with % deltas), corridor comparison, immediate
+      actions for the PlannerAgent.
+
+  src/agents.py                    MODIFIED
+    - Imported TREND_OPS_PROMPT.
+    - Added run_trend_agent(dq_report, corridor_comparison, pop_trend) —
+      replaces the generic run_ops_agent for the new CSV schema.
+
+  src/graph.py                     MODIFIED
+    - Replaced node_csv_analysis with node_dq_reconcile.
+    - Deferred imports of pandas/dq_tools/trend_tools inside the node body
+      to dodge the pandas-vs-chromadb-rust DLL issue (see §3.2).
+    - Decorated every node with @_timed(label) for per-node wall-clock
+      visibility.
+    - node_pdf_context now calls load_cached_business_context() first;
+      on a fingerprint match it skips both the retriever and the
+      ContextAgent LLM call entirely (warm-cache observed at ~73× speedup).
+    - node_report builds kpis_for_report + anomaly_highlights from the
+      Feature 3 outputs so the existing REPORT_PROMPT contract is honored
+      without invasive prompt edits.
+
+  src/tools/pdf_tools.py           MODIFIED
+    - Multi-format loader: dispatches PyPDFLoader / TextLoader by file
+      extension (.pdf / .md / .markdown / .txt).
+    - Source fingerprinting via sha1(path | size | mtime). When the
+      fingerprint changes, the persist_dir is wiped at filesystem level
+      (avoids chromadb's flaky rust .get()/.delete() Windows path).
+    - load_cached_business_context() / save_cached_business_context() —
+      persists the ContextAgent's output alongside the Chroma index so
+      reruns skip the LLM round-trip.
+
+  src/tracing.py                   REWRITTEN
+    - Now probes LangSmith's /info endpoint with a 3-second timeout
+      before declaring tracing live. On any auth or network failure it
+      forces LANGCHAIN_TRACING_V2=false so the background uploader threads
+      don't spawn (they had been observed to interact with chromadb's
+      rust client and produce Windows access violations).
+
+  src/tools/email_tools.py         MODIFIED
+    - Added explicit handlers for TimeoutError, ConnectionError, OSError
+      so SMTP outages (e.g. Zoho 10060 timeout) do not crash the pipeline.
+    - Added a 15-second socket timeout to both SMTP_SSL and SMTP paths.
+
+  src/main.py                      MODIFIED
+    - Repointed pdf_path → data-for-enhancement/SeeWeeS Specialty
+      Dispatch Playbook.md
+    - Repointed csv_path → data-for-enhancement/Incoming_shipments_14d_
+      multi_corridor.csv
+
+  plan.txt                         MODIFIED
+    - Feature 3 marked DONE. Implementation steps 4-8 ticked off.
+    - Architecture-gap matrix and step list updated.
+
+
+3. CHALLENGES FACED + RESOLUTION
+--------------------------------------------------------------------------------
+
+3.1  Alias-match was over-flagging legitimate variants as DQ-03
+     Initial run reported 23 DQ-03 violations on a clean dataset.
+
+     Root cause: my D4 (alias) branch was returning DQ-03 the moment
+     the row's item_id appeared anywhere in the master, even when the
+     alias's canonical resolved BACK to that same item_id. So
+     "Remdesivir 100 mg" (alias) with item_id=10021 — where the alias
+     canonically maps to RMD-100, which is itself an item_id=10021
+     row in A.1 — was being flagged as a name/id mismatch.
+
+     Fix: extended master_by_canonical to carry the canonical row's
+     item_id and tightened D4 to:
+        - alias canonical agrees with row item_id  → ALIAS_MATCH
+        - alias canonical disagrees but row item_id is valid → DQ-03
+        - row item_id missing/unknown → accept ALIAS_MATCH
+
+     After fix: 124 valid / 5 DQ-01 / 0 DQ-02 / 0 DQ-03 / 0 DQ-04 —
+     matches the 5 manually identified missing-UID rows in the CSV.
+
+3.2  Pipeline segfaulted with Windows access violation on
+     vectordb.add_documents()  (exit code 0xC0000005)
+
+     Symptom: every `python src/main.py` invocation exited with
+     -1073741819. faulthandler trace pointed at
+     `chromadb/api/rust.py:541  _upsert` invoked from PdfRag.build().
+
+     Isolation: calling PdfRag.build() directly from a one-line script
+     worked. The crash only manifested when the project was loaded via
+     `from graph import build_graph`. Bisection narrowed it to "import
+     pandas (and do any DataFrame work) before chromadb's add_documents
+     → crash; the reverse order → fine".
+
+     This turned out to be a known interaction between pandas/numpy's
+     allocator setup and chromadb's compiled rust client on Windows —
+     not a project bug. The langsmith background uploader threads
+     (firing because LANGCHAIN_TRACING_V2 was enabled with a stale key)
+     amplified the timing window and made the crash deterministic.
+
+     Multiple workarounds tried:
+        a) `import chromadb` pre-warm at top of main.py — insufficient.
+        b) `chromadb.PersistentClient.upsert(...)` warm-up — works but
+           is heavy and brittle.
+        c) Deferred pandas import inside node_dq_reconcile + lazy
+           _LOOKUPS_CACHE in dq_tools — robust and zero-cost.
+
+     Chose (c) and documented the constraint at the top of graph.py and
+     dq_tools.py.
+
+     Secondary fix in tracing.py: probe the langsmith API key at
+     startup and disable tracing on failure, so the uploader threads
+     don't spawn against a dead endpoint.
+
+3.3  Chroma `.get()` access violation when purging stale chunks
+     My first pass at idempotent reindex used vectordb.get(include=
+     ["metadatas"]) to find chunks tagged with an older source
+     fingerprint, then vectordb.delete(ids=...). Both calls crashed
+     in chromadb's rust binding.
+
+     Fix: replaced the in-place chroma API approach with a filesystem
+     sentinel (chroma_db/_source_fingerprint.txt) and shutil.rmtree
+     when the fingerprint changes. No chroma API call needed for the
+     stale-detection path.
+
+3.4  PyPDFLoader can't read markdown
+     New project source was the Dispatch Playbook .md, not a PDF.
+
+     Fix: PdfRag.build() now switches on extension between PyPDFLoader
+     and TextLoader (covers .pdf, .md, .markdown, .txt) and raises a
+     precise error for anything else.
+
+3.5  Pandas itertuples drops attributes starting with underscore
+     A `master["_name_norm"] = ...` column was inaccessible inside an
+     `for r in master.itertuples(): r._name_norm` loop — itertuples
+     renames such fields to positional ones.
+
+     Fix: renamed working columns to `name_norm` / `alias_norm`
+     (no leading underscore) and use straightforward attribute access.
+
+3.6  SMTP failures took the whole pipeline down
+     Original email_tools handled SMTPAuthenticationError and
+     SMTPException, but a Zoho TCP timeout (WinError 10060) is a
+     TimeoutError — it bypassed both handlers and propagated out of
+     LangGraph as an uncaught node failure.
+
+     Fix: added TimeoutError, ConnectionError, OSError handlers and
+     a 15s socket timeout. The pipeline now treats email failure as a
+     soft warning and still writes report_output.html.
+
+
+4. OPTIMIZATIONS APPLIED (beyond the plan)
+--------------------------------------------------------------------------------
+
+  [Perf]   business_context memoization keyed on source fingerprint.
+           Warm-cache rerun: node_pdf_context 14.69s → 0.20s (~73× faster).
+           Saves the entire ContextAgent LLM round-trip when the playbook
+           is unchanged.
+
+  [Perf]   Vectorized (item_id, item_name) resolution cache inside
+           reconcile_shipments — repeated SKUs hit the same resolution
+           memo instead of re-walking D3 → D6.
+
+  [Perf]   Replaced row-by-row pandas .apply with bulk merge for the
+           canonical-attribute back-fill.
+
+  [Robust] Lazy _LOOKUPS_CACHE in dq_tools and deferred pandas import
+           in graph.py — eliminates the Windows pandas-vs-chromadb-rust
+           segfault entirely.
+
+  [Robust] Idempotent chroma reindex via filesystem fingerprint sentinel.
+           Stale chunks never accumulate across runs even when the source
+           file changes.
+
+  [Robust] LangSmith /info auth probe before tracing is allowed to start.
+           Stops the background uploader threads from spamming 403s
+           and from racing with chromadb's rust client.
+
+  [Robust] SMTP timeout + broadened exception handling; report still
+           saves to disk when email is unreachable.
+
+  [Cleanliness] sla_tier is back-filled as a first-class column in
+                reconcile_shipments. trend_tools reads the column rather
+                than re-deriving the tier — single source of truth.
+
+  [Cleanliness] Normalization helper centralised: every name comparison
+                (master, alias, row) goes through _normalize_name() so
+                D3 and D4 use the exact same key.
+
+  [Observ.] @_timed("node_name") decorator prints wall-clock per node.
+            Made the 22s ReportAgent step instantly visible; confirmed
+            the audit loop is sub-second on a successful first pass.
+
+  [Observ.] node_dq_reconcile prints a single-line DQ summary
+            (total / valid / excluded / flagged + DQ-01..04 counts)
+            on every run for fast smoke-test reading.
+
+  [DevX]    `python -m tools.dq_tools <csv>` self-test prints the
+            full DQ report + tier distribution. No need to run the
+            full graph to validate reconciliation changes.
+
+  [DevX]    Multi-format RAG loader (.pdf/.md/.txt) — switching between
+            playbook formats is now a one-line state change in main.py,
+            no code edits required.
+
+
+5. KEY TAKEAWAYS
+--------------------------------------------------------------------------------
+
+  - Determinism is a feature, not a constraint. The audit loop only works
+    because the upstream KPIs are produced by code, not the LLM. The
+    AuditAgent can quote exact numbers from the dq_report and the planner
+    can be held to those numbers on the retry. Putting an LLM on top of
+    deterministic primitives — instead of asking it to compute and judge
+    in one go — is what made Feature 1's self-correction loop converge
+    in one attempt on the first end-to-end run.
+
+  - Single-source-of-truth for derived attributes. Once sla_tier became
+    a column on the reconciled DataFrame, both trend_tools and the
+    AuditAgent stopped needing their own copy of the tier rules. Any
+    future change (e.g., moving a medicine_type from Tier 2 to Tier 1)
+    touches one dictionary in dq_tools and propagates everywhere.
+
+  - Vectorize before optimizing further. The naive Python-loop
+    reconciler would have worked fine on 129 rows but would have
+    embarrassed itself on 10,000. Building it vectorized from the
+    start (merge + groupby + value_counts) costs the same lines of
+    code and stays fast at scale.
+
+  - Cache the slow boundary calls, not the fast ones. The biggest
+    speedup came from caching the single ContextAgent LLM call by
+    source fingerprint — the actual DQ + trend code already runs in
+    sub-100ms; throwing more caching at it would not move the needle.
+
+  - Native-library order matters on Windows. The pandas-vs-chromadb
+    interaction is environment-specific and not a code bug in the
+    classic sense, but the fix (deferred imports + lazy module-level
+    pandas work) is a generally-useful pattern: never do heavy
+    side-effecting work at module import time if you don't have to.
+
+  - Graceful degradation > hard failure. Wrapping every external
+    boundary (SMTP, LangSmith, chromadb's flaky `.get()`) in narrow
+    try/except with a clear console message means a flaky environment
+    never destroys a successful pipeline run.
+
+
+6. END-TO-END BENCHMARKS (post-optimization)
+--------------------------------------------------------------------------------
+
+  Cold run (no cache, freshly wiped chroma_db):
+
+      pdf_context  : 14.69s   (chunk indexing + LLM context extraction)
+      dq_reconcile :  7.04s   (TrendAgent LLM; pure DQ work <100ms)
+      weather      :  0.68s
+      planner      : 16.91s
+      audit        :  1.86s   → PASSED on first attempt
+      report       : 22.40s
+      ────────────────────
+      Total        : ~63s
+
+  Warm run (same source, cached business_context):
+
+      pdf_context  :  0.20s   ← 73× faster, ContextAgent LLM skipped
+      dq_reconcile :  9.04s
+      weather      :  0.67s
+      planner      : 15.30s
+      audit        :  0.93s   → PASSED on first attempt
+      report       : 23.79s
+      ────────────────────
+      Total        : ~50s
+
+  Reconciliation numbers on the multi-corridor CSV (129 rows):
+
+      Total rows         : 129
+      Valid rows         : 124
+      Excluded rows      :   5  (all DQ-01 missing unique_item_id)
+      DQ-01              :   5
+      DQ-02 / 03 / 04    :   0  / 0 / 0
+      exact_match        : 100
+      alias_match        :  24
+      SLA Tier 1 (valid) :  95
+      SLA Tier 2 (valid) :  29
+      C1_I95_NJ_BOS valid:  63 / 66   (3 excluded)
+      C2_NJ_PHL    valid:  61 / 63   (2 excluded)
+
+
+7. NEXT — FEATURE 5 (PENDING)
+--------------------------------------------------------------------------------
+
+The Feature 3 outputs (canonical_df_json on AppState + sla_tier column +
+corridor_comparison) are deliberately shaped to plug straight into
+Feature 5's resource allocator:
+
+  - resource_tools.compute_demand() will read corridor_comparison's
+    planning_window block and the sla_tier column for the per-day
+    truck/driver demand math.
+  - resource_tools.allocate_resources() will run a penalty-minimizing
+    greedy allocator using §13.2's weights:
+        Tier 1 SLA = 100   Tier 2 SLA = 40
+        Cold-chain = +80   Non-SLA delay = 10
+  - weather_tools.get_corridor_weather() will replace the single-point
+    forecast with per-waypoint fetches across the 9 waypoints across
+    C1 + C2, then take the max-by-day for the corridor risk score.
+  - graph.py will fan out pdf_context → [node_dq_reconcile,
+    node_weather_multi_corridor] in parallel and join into
+    node_resource_allocator before the planner.
+
+================================================================================
+8. CROSS-PROJECT MERGE — adopting the stronger ideas from a peer build
+   (2026-05-21)
+================================================================================
+
+A second SeeWeeS implementation (seewees-dispatch-ai-agent-main/) was added
+to the workspace for comparison. After a file-by-file review, four of its
+ideas were genuinely stronger than ours and were ported in — while keeping
+our wins (vectorized DQ, business_context caching, per-node timing, the
+LangSmith key probe, and the Windows pandas/chromadb crash handling).
+
+8.1  Deterministic audit + structured-JSON planner  [strongest grading win]
+     - PLANNER_PROMPT now returns strict JSON:
+         recommended_buffer_pct, escalation_required, cited_rules,
+         dispatch_plan, what_to_monitor, contingency_triggers,
+         expected_kpi_impacts.
+     - run_planner_agent parses that JSON (with a `_extract_json_block`
+       fence-tolerant parser and a safe fallback draft).
+     - graph.apply_deterministic_audit_checks() layers HARD checks on top of
+       the LLM audit verdict:
+         * recommended_buffer_pct must equal the §5.2 mapping for the current
+           weather risk_score (0->0, 1->10, 2->25, 3->40)
+         * escalation_required must be true when risk_score == 3
+         * cited_rules must be non-empty
+       The audit now passes only if the LLM passed AND no deterministic
+       violation fired. This makes the self-correction loop verifiable
+       instead of vibes-based.
+     - node_planner stores the structured draft + a rendered text version
+       (dispatch_plan) for the report. Our existing retry loop, route_audit,
+       human_checkpoint, and MAX_AUDIT_RETRIES are untouched.
+
+8.2  RAG retrieval evaluation  [new measurable capability]
+     - New src/tools/knowledge_tools.py with a 5-question eval set tied to
+       playbook sections (DQ rules, buffer policy, alias table, SLA classes,
+       reporting requirements).
+     - run_rag_eval scores recall_at_k (expected section heading appears in
+       top-k) and grounded_answer_accuracy (all expected terms appear).
+     - node_pdf_context runs it every run and prints:
+         [RAGEval] Recall@5=1.0 grounded_accuracy=1.0
+     - Required section-aware markdown indexing (see 8.4).
+
+8.3  Deep-dive analytics appendix  [richer Idea-3 output]
+     - trend_tools gained compute_item_spikes() (planning-window volume vs
+       historical daily baseline) and compute_deep_dive_tables()
+       (daily valid units, corridor-by-day, correction/exclusion breakdowns,
+       sample corrected + unresolved rows).
+     - graph renders these as an HTML appendix appended to the report AND a
+       plain-text appendix (report_appendix.txt) emailed as an attachment.
+     - email_tools.send_email_smtp now supports file attachments.
+
+8.4  Section-aware markdown RAG + lazy LLM init  [supporting changes]
+     - pdf_tools splits markdown by heading, tags each chunk with
+       section_title + stream (policy/reference), and uses larger chunks for
+       reference/table sections. Added PdfRag.retrieve(..., stream=...).
+     - agents.py switched to a lazy _get_llm() so the module (and graph.py)
+       imports without OPENAI_API_KEY — which is what unblocked pytest.
+
+8.5  Unit test suite  [we previously had zero tests]
+     - tests/conftest.py puts src/ on the path.
+     - tests/test_dq_tools.py (10 tests): exact/alias/legacy resolution,
+       DQ-01/02/04, sla_tier back-fill, tier defaulting, required-column
+       validation, and the D4-over-D5 precedence rule.
+     - tests/test_trend_tools.py: capacity model, corridor KPIs, PoP,
+       deep-dive table shapes.
+     - tests/test_audit_logic.py: buffer mapping + every deterministic
+       audit branch.
+     - Result: 21 passed.
+
+     Note on a "failing" test that was actually correct: an early
+     test_legacy_id_map assumed item_id 1070 + "Albuterol Inhaler" would
+     resolve via legacy mapping (D5). It resolved via name-alias (D4)
+     instead — which is the correct playbook precedence (D3 -> D4 -> D5).
+     The test was corrected and a second test added to lock in that
+     precedence.
+
+8.6  What we deliberately did NOT adopt
+     - The peer's row-by-row iterrows reconciler (ours is vectorized).
+     - Their re-running the context LLM every run (we cache it).
+     - Their per-fingerprint Chroma collection accumulation (we wipe).
+
+8.7  Merged-pipeline benchmarks
+     Cold:  pdf_context 11.2s (30 section-aware chunks) | RAGEval 1.0/1.0 |
+            dq_reconcile 8.7s | planner 5.9s | audit 0.9s PASS(attempt1) |
+            report 23.3s
+     Warm:  pdf_context 3.2s (index + context cache hit) | RAGEval 1.0/1.0 |
+            audit PASS(attempt1)
+     DQ numbers unchanged: 129 total / 124 valid / 5 DQ-01.
+
+================================================================================
+9. DATA-LEAKAGE AUDIT  (2026-05-21)
+================================================================================
+
+Checked both senses of "data leakage": secrets/PII exposure and analytical
+train/test contamination.
+
+9.1  Secrets / credentials — CLEAN
+     - No .env or secret/key/pem files are git-tracked (`git ls-files`).
+     - Root .gitignore excludes .env, chroma_db/, *.log, *.sqlite, *.db.
+     - The on-disk .env is untracked (correctly ignored).
+     - No hardcoded API keys, passwords, or AWS keys in src/ (regex scan for
+       sk-*, AKIA*, api_key=, password= came back empty).
+     - The peer repo's .env.example contains only blank placeholders.
+
+9.2  Artifact hygiene — FIXED
+     - report_output.html was git-tracked (a generated build artifact).
+     - report_output.html and report_appendix.txt are now added to
+       .gitignore. (report_output.html is already in the index; to stop
+       tracking it run `git rm --cached report_output.html` — left to the
+       user since it changes git state.)
+
+9.3  PII to review — FLAGGED (peer repo)
+     - seewees-dispatch-ai-agent-main/outputs/sample_report/
+       "Gmail - MSBA Ops Multi-Agent Dispatch Report.pdf" is a screenshot/
+       export of an actual Gmail message. Their README says it is redacted;
+       confirm no real recipient email address / PII remains before sharing.
+
+9.4  Analytical (train/test) leakage — CLEAN
+     - There is no ML model training in the pipeline (the old IsolationForest
+       path was removed), so classic train/test contamination does not apply.
+     - The one place a baseline meets a "test" set is the item-spike and PoP
+       analysis. Verified the partitions are strictly disjoint:
+         * planning window = planning_day in {Day0, Day1}
+         * historical baseline = planning_day == History
+       The historical daily average is computed ONLY from History rows; the
+       planning-window counts never feed the baseline. No future->past leak.
+     - PoP analysis splits History alone by date midpoint; planning rows are
+       excluded entirely.
+     - Caveat (not leakage): the RAG eval set is small (5 questions) and its
+       expected answers are hand-authored, so Recall@5=1.0 is indicative of a
+       small, well-structured playbook — treat it as a sanity check, not a
+       rigorous benchmark.
+
+================================================================================
+End of work log.
+================================================================================

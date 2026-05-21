@@ -16,3 +16,7 @@ chroma_db/
 
 # logs
 *.log
+
+# generated report artifacts (regenerated on every run)
+report_output.html
+report_appendix.txt

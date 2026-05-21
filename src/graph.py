@@ -2,6 +2,7 @@ from __future__ import annotations
 import os
 import time
 from functools import wraps
+from html import escape
 from typing import Any, Callable, Dict, List, TypedDict
 
 from langgraph.graph import StateGraph, END
@@ -33,17 +34,21 @@ class AppState(TypedDict, total=False):
     csv_path: str
 
     business_context: str
+    rag_eval_results: Dict[str, Any]
 
     # Feature 3 — DQ reconciliation + trend analysis
     dq_report: Dict[str, Any]
     corridor_comparison: Dict[str, Any]
     pop_trend: Dict[str, Any]
+    deep_dive_tables: Dict[str, Any]
+    appendix_text: str              # deterministic deep-dive tables, emailed as attachment
     canonical_df_json: str          # serialized reconciled rows for downstream agents
     ops_insights: str               # narrated by run_trend_agent
 
     weather_forecast: Dict[str, Any]
     weather_risk: Dict[str, Any]
 
+    planner_draft: Dict[str, Any]
     dispatch_plan: str
 
     # Feature 1 — audit loop state
@@ -74,31 +79,114 @@ def _timed(label: str) -> Callable:
 
 
 # ---------------------------------------------------------------------------
+# Deep-dive appendix rendering
+# ---------------------------------------------------------------------------
+
+_DEEP_DIVE_SPECS = [
+    ("Daily Valid Shipment Trend", "daily_valid_units", ["shipment_date", "planning_day", "valid_units"]),
+    ("Planning Window Corridor by Day", "corridor_day_breakdown", ["corridor_id", "planning_day", "valid_units"]),
+    ("Top Item Spikes vs Historical Baseline", "item_spikes",
+     ["canonical_item_name", "planning_window_units", "historical_avg_daily_units", "spike_ratio"]),
+    ("Correction Breakdown (alias / legacy)", "correction_breakdown", ["reason_code", "units"]),
+    ("Exclusion Breakdown by Reason", "exclusion_breakdown", ["reason_code", "units"]),
+    ("Excluded Rows by Day and Reason", "daily_excluded_units", ["planning_day", "reason_code", "excluded_units"]),
+    ("Sample Corrected Rows", "corrected_samples",
+     ["item_id", "item_name", "canonical_item_id", "canonical_item_name", "reason_code", "planning_day", "corridor_id"]),
+    ("Sample Excluded / Unresolved Rows", "unresolved_samples",
+     ["item_id", "item_name", "unique_item_id", "reason_code", "planning_day", "corridor_id"]),
+]
+
+
+def _text_table(rows: List[Dict[str, Any]], columns: List[str]) -> str:
+    if not rows:
+        return "(none)"
+    safe = [{c: "" if r.get(c) is None else str(r.get(c)) for c in columns} for r in rows]
+    widths = {c: max(len(c), *(len(r[c]) for r in safe)) for c in columns}
+    header = " | ".join(c.ljust(widths[c]) for c in columns)
+    divider = "-+-".join("-" * widths[c] for c in columns)
+    body = [" | ".join(r[c].ljust(widths[c]) for c in columns) for r in safe]
+    return "\n".join([header, divider, *body])
+
+
+def render_deep_dive_text(deep: Dict[str, Any]) -> str:
+    if not deep:
+        return ""
+    out = [
+        "MSBA Ops Deep-Dive Analytics Appendix",
+        "=" * 37,
+        "",
+        "Deterministic tables computed from the reconciled shipment data. "
+        "Separated from the executive report to keep that decision-focused.",
+    ]
+    for title, key, cols in _DEEP_DIVE_SPECS:
+        rows = deep.get(key, [])
+        if rows:
+            out.extend(["", title, "-" * len(title), _text_table(rows, cols)])
+    return "\n".join(out)
+
+
+def render_deep_dive_html(deep: Dict[str, Any]) -> str:
+    if not deep:
+        return ""
+    parts = ["<section><h2>Deep-Dive Analytics Appendix</h2>"]
+    for title, key, cols in _DEEP_DIVE_SPECS:
+        rows = deep.get(key, [])
+        if not rows:
+            continue
+        head = "".join(f"<th>{escape(str(c))}</th>" for c in cols)
+        body = "".join(
+            "<tr>" + "".join(
+                f"<td>{escape('' if r.get(c) is None else str(r.get(c)))}</td>" for c in cols
+            ) + "</tr>"
+            for r in rows
+        )
+        parts.append(f"<h3>{escape(title)}</h3>")
+        parts.append(
+            "<table border='1' cellspacing='0' cellpadding='6' "
+            "style='border-collapse:collapse;width:100%;margin:10px 0;'>"
+            f"<thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
+        )
+    parts.append("</section>")
+    return "".join(parts)
+
+
+# ---------------------------------------------------------------------------
 # Nodes
 # ---------------------------------------------------------------------------
 
 @_timed("pdf_context")
 def node_pdf_context(state: AppState) -> AppState:
+    from tools.knowledge_tools import run_rag_eval
+
     persist_dir = "chroma_db"
     rag = PdfRag(persist_dir=persist_dir)
     vectordb = rag.build(state["pdf_path"])
 
+    # Retrieval-quality scorecard (cheap: 5 similarity searches, no LLM).
+    rag_eval = run_rag_eval(rag, vectordb, k=5)
+    print(
+        f"[RAGEval] Recall@{rag_eval['k']}={rag_eval['recall_at_k']} "
+        f"grounded_accuracy={rag_eval['grounded_answer_accuracy']}"
+    )
+
     # If the source is unchanged, reuse the previously-extracted context and
-    # skip both the retriever call and the ContextAgent LLM round-trip.
+    # skip the ContextAgent LLM round-trip.
     cached = load_cached_business_context(persist_dir)
     if cached:
         print("[ContextAgent] Cache hit — reusing business_context.")
-        return {"business_context": cached}
+        return {"business_context": cached, "rag_eval_results": rag_eval}
 
-    retriever = rag.retriever(vectordb, k=6)
-    query = "Extract KPI definitions, thresholds, SLAs, constraints, dispatch rules, exceptions."
-    docs = retriever.invoke(query)
+    docs = rag.retrieve(
+        vectordb,
+        "Extract KPI definitions, thresholds, SLAs, constraints, dispatch rules, exceptions.",
+        k=6,
+    )
     snippets = "\n\n---\n\n".join(d.page_content for d in docs)
 
     business_context = run_context_agent(snippets)
     save_cached_business_context(persist_dir, business_context)
     print("[ContextAgent] Extracted and cached business_context.")
-    return {"business_context": business_context}
+    return {"business_context": business_context, "rag_eval_results": rag_eval}
 
 
 @_timed("dq_reconcile")
@@ -111,13 +199,14 @@ def node_dq_reconcile(state: AppState) -> AppState:
     # Local imports: see top-of-file note on the pandas/chromadb DLL conflict.
     import pandas as pd
     from tools.dq_tools import reconcile_shipments
-    from tools.trend_tools import compare_corridors, compute_pop_trend
+    from tools.trend_tools import compare_corridors, compute_pop_trend, compute_deep_dive_tables
 
     df = pd.read_csv(state["csv_path"])
 
     result = reconcile_shipments(df)
     comparison = compare_corridors(result.reconciled)
     pop = compute_pop_trend(result.reconciled)
+    deep_dive = compute_deep_dive_tables(result.reconciled)
 
     print(
         f"\n[DQReconcile] total={result.report['total_rows']} "
@@ -144,6 +233,7 @@ def node_dq_reconcile(state: AppState) -> AppState:
         "dq_report": result.report,
         "corridor_comparison": comparison,
         "pop_trend": pop,
+        "deep_dive_tables": deep_dive,
         "canonical_df_json": canonical_df_json,
         "ops_insights": ops_insights,
     }
@@ -160,30 +250,94 @@ def node_weather(state: AppState) -> AppState:
     return {"weather_forecast": forecast, "weather_risk": risk}
 
 
+def _expected_buffer_pct(risk_score: Any) -> int:
+    """Playbook §5.2 buffer mapping. Unknown score -> 0."""
+    return {0: 0, 1: 10, 2: 25, 3: 40}.get(int(risk_score or 0), 0)
+
+
+def _render_dispatch_plan_text(draft: Dict[str, Any]) -> str:
+    """Flatten the structured planner draft into narrative text for the report."""
+    def _bullets(items: Any) -> str:
+        if not items:
+            return "  - (none)"
+        if isinstance(items, str):
+            return f"  - {items}"
+        return "\n".join(f"  - {i}" for i in items)
+
+    return (
+        f"Recommended travel buffer: {draft.get('recommended_buffer_pct')}%\n"
+        f"Escalation required: {draft.get('escalation_required')}\n"
+        f"Cited rules:\n{_bullets(draft.get('cited_rules'))}\n\n"
+        f"Dispatch plan (next 24-48h):\n{draft.get('dispatch_plan', '')}\n\n"
+        f"What to monitor:\n{_bullets(draft.get('what_to_monitor'))}\n\n"
+        f"Contingency triggers:\n{_bullets(draft.get('contingency_triggers'))}\n\n"
+        f"Expected KPI impacts:\n{_bullets(draft.get('expected_kpi_impacts'))}\n"
+    )
+
+
+def apply_deterministic_audit_checks(
+    state: AppState, draft: Dict[str, Any], llm_result: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Layer hard, code-verifiable checks on top of the LLM audit verdict.
+
+    These are NOT judgment calls — they compare the planner's structured
+    fields against the playbook's fixed numeric policy. Any mismatch is a
+    violation regardless of what the LLM concluded.
+    """
+    risk_score = state.get("weather_risk", {}).get("risk_score_0_3", 0)
+    expected_buffer = _expected_buffer_pct(risk_score)
+
+    violations = list(llm_result.get("violations", []))
+
+    if draft.get("recommended_buffer_pct") != expected_buffer:
+        violations.append(
+            f"recommended_buffer_pct={draft.get('recommended_buffer_pct')} does not match the required "
+            f"{expected_buffer}% for weather risk_score {risk_score} (§5.2)."
+        )
+    if int(risk_score or 0) == 3 and not draft.get("escalation_required"):
+        violations.append("risk_score is 3 but escalation_required is not true (§5.2 requires escalation).")
+    if not draft.get("cited_rules"):
+        violations.append("Planner draft cites no playbook rules (cited_rules is empty).")
+
+    passed = bool(llm_result.get("passed", False)) and not violations
+    severity = llm_result.get("severity", "low")
+    if violations and severity == "low":
+        severity = "medium"
+
+    return {"passed": passed, "violations": violations, "severity": severity}
+
+
 @_timed("planner")
 def node_planner(state: AppState) -> AppState:
     violations = state.get("audit_violations", [])
-    plan = run_planner_agent(
+    draft = run_planner_agent(
         business_context=state.get("business_context", ""),
         ops_insights=state.get("ops_insights", ""),
         weather_risk=state.get("weather_risk", {}),
         audit_violations=violations if violations else None,
     )
-    return {"dispatch_plan": plan}
+    return {
+        "planner_draft": draft,
+        "dispatch_plan": _render_dispatch_plan_text(draft),
+    }
 
 
 @_timed("audit")
 def node_audit(state: AppState) -> AppState:
     retries = state.get("audit_retries", 0)
     prior_violations = state.get("audit_violations", [])
+    draft = state.get("planner_draft", {})
 
-    result = run_audit_agent(
+    llm_result = run_audit_agent(
         business_context=state.get("business_context", ""),
         dispatch_plan=state.get("dispatch_plan", ""),
         weather_risk=state.get("weather_risk", {}),
         audit_retries=retries,
         prior_violations=prior_violations,
     )
+
+    # Hard, code-verifiable checks on top of the LLM verdict.
+    result = apply_deterministic_audit_checks(state, draft, llm_result)
 
     status = "PASSED" if result["passed"] else f"FAILED (severity: {result['severity']})"
     print(f"\n[AuditAgent] Attempt {retries + 1}/{MAX_AUDIT_RETRIES}: {status}")
@@ -274,7 +428,14 @@ def node_report(state: AppState) -> AppState:
         dispatch_plan=state.get("dispatch_plan", ""),
         audit_trail=audit_trail,
     )
-    return {"report_html": html}
+
+    deep = state.get("deep_dive_tables", {})
+    appendix_text = render_deep_dive_text(deep)
+    deep_html = render_deep_dive_html(deep)
+    if deep_html:
+        html = f"{html}\n{deep_html}"
+
+    return {"report_html": html, "appendix_text": appendix_text}
 
 
 def node_email(state: AppState) -> AppState:
@@ -284,7 +445,19 @@ def node_email(state: AppState) -> AppState:
         return {}
 
     subject = "MSBA Ops Multi-Agent Dispatch Report"
-    send_email_smtp(subject=subject, html_body=state["report_html"], to_email=to_email)
+    attachments = []
+    if state.get("appendix_text"):
+        attachments.append({
+            "filename": "msba_ops_deep_dive_appendix.txt",
+            "mime_type": "text/plain",
+            "content": state["appendix_text"],
+        })
+    send_email_smtp(
+        subject=subject,
+        html_body=state["report_html"],
+        to_email=to_email,
+        attachments=attachments,
+    )
     return {}
 
 

@@ -43,13 +43,28 @@ TREND_OPS_PROMPT = ChatPromptTemplate.from_messages([
 
 PLANNER_PROMPT = ChatPromptTemplate.from_messages([
     ("system",
-     "You are PlannerAgent. Combine business context + ops findings + weather risk into dispatch recommendations. "
+     "You are PlannerAgent. Combine business context + ops findings + weather risk into a dispatch recommendation. "
      "Prioritize SLA, safety, and cost. "
-     "If audit violations are listed, you MUST explicitly address and fix every one before returning your plan."),
+     "Return ONLY a valid JSON object — no markdown fences, no prose outside the JSON. "
+     "The weather buffer policy is fixed: risk_score 0 -> 0%, 1 -> 10%, 2 -> 25%, 3 -> 40% (and score 3 also "
+     "requires escalation). You MUST set recommended_buffer_pct to exactly the value the current risk_score maps to, "
+     "and set escalation_required to true if and only if risk_score is 3. "
+     "cited_rules must list the specific playbook rules/sections your plan relies on (e.g. 'Tier 1 SLA = 6h', "
+     "'risk_score 3 -> +40% buffer + escalation'). "
+     "If audit_violations are listed, you MUST fix every one before returning."),
     ("user",
      "Business context:\n{business_context}\n\nOps insights:\n{ops_insights}\n\nWeather risk:\n{weather_risk}\n\n"
      "Audit violations to fix (empty on first attempt):\n{audit_violations}\n\n"
-     "Return:\n1) Dispatch plan for next 24-48h\n2) What to monitor\n3) Contingency triggers\n4) Expected KPI impacts\n")
+     "Return JSON with exactly these keys:\n"
+     "{{\n"
+     '  "recommended_buffer_pct": <int: one of 0,10,25,40>,\n'
+     '  "escalation_required": <bool>,\n'
+     '  "cited_rules": [<string>, ...],\n'
+     '  "dispatch_plan": "<narrative recommendation for the next 24-48h>",\n'
+     '  "what_to_monitor": [<string>, ...],\n'
+     '  "contingency_triggers": [<string>, ...],\n'
+     '  "expected_kpi_impacts": [<string>, ...]\n'
+     "}}")
 ])
 
 AUDIT_PROMPT = ChatPromptTemplate.from_messages([

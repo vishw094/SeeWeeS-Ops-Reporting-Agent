@@ -27,3 +27,10 @@ if __name__ == "__main__":
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(report_html)
         print(f"\n[Output] Full report saved to {out_path}")
+
+    appendix_text = final.get("appendix_text", "")
+    if appendix_text:
+        appendix_path = "report_appendix.txt"
+        with open(appendix_path, "w", encoding="utf-8") as f:
+            f.write(appendix_text)
+        print(f"[Output] Deep-dive appendix saved to {appendix_path}")

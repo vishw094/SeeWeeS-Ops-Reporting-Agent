@@ -211,12 +211,125 @@ def compare_corridors(reconciled: pd.DataFrame) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Deep-dive analytics (item spikes + breakdown tables for the appendix)
+# ---------------------------------------------------------------------------
+
+CORRECTED_REASONS = {"alias_match", "legacy_id_map"}
+
+
+def _planning_mask(df: pd.DataFrame) -> pd.Series:
+    """Boolean mask for the 48h planning window (Day0 + Day1)."""
+    if "planning_day" in df.columns:
+        return df["planning_day"].astype(str).isin(["Day0", "Day1"])
+    return pd.Series(False, index=df.index)
+
+
+def _frame_to_records(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """JSON-safe list-of-dicts: datetimes → ISO strings, NaN → None."""
+    if df is None or df.empty:
+        return []
+    safe = df.copy()
+    for col in safe.columns:
+        if pd.api.types.is_datetime64_any_dtype(safe[col]):
+            safe[col] = safe[col].dt.strftime("%Y-%m-%d")
+    return safe.where(pd.notna(safe), None).to_dict(orient="records")
+
+
+def compute_item_spikes(reconciled: pd.DataFrame, min_ratio: float = 1.5, top_n: int = 12) -> List[Dict[str, Any]]:
+    """Per-item planning-window volume vs historical daily average.
+
+    A spike is flagged when the planning-window count is >= min_ratio × the
+    item's average daily history volume (or when there is no history at all).
+    """
+    valid = reconciled[reconciled["is_valid"]].copy()
+    if valid.empty or "shipment_date" not in valid.columns:
+        return []
+
+    valid["shipment_date"] = pd.to_datetime(valid["shipment_date"], errors="coerce")
+    planning = valid[_planning_mask(valid)]
+    history = valid[~_planning_mask(valid)]
+    if planning.empty:
+        return []
+
+    planning_counts = planning.groupby("canonical_item_name").size().rename("planning_window_units")
+    if not history.empty:
+        history_daily = (
+            history.groupby(["canonical_item_name", "shipment_date"]).size()
+                   .groupby("canonical_item_name").mean()
+        )
+    else:
+        history_daily = pd.Series(dtype=float)
+
+    table = planning_counts.reset_index()
+    table["historical_avg_daily_units"] = (
+        table["canonical_item_name"].map(history_daily).fillna(0.0).round(2)
+    )
+    table["spike_ratio"] = table.apply(
+        lambda r: None if r["historical_avg_daily_units"] == 0.0
+        else round(float(r["planning_window_units"]) / float(r["historical_avg_daily_units"]), 2),
+        axis=1,
+    )
+
+    spikes = table[
+        (table["historical_avg_daily_units"] == 0.0)
+        | (table["spike_ratio"].fillna(0) >= min_ratio)
+    ]
+    spikes = spikes.sort_values(
+        ["planning_window_units", "historical_avg_daily_units"], ascending=[False, False]
+    ).head(top_n)
+    return _frame_to_records(spikes)
+
+
+def compute_deep_dive_tables(reconciled: pd.DataFrame) -> Dict[str, Any]:
+    """Deterministic breakdown tables for the leadership appendix."""
+    valid = reconciled[reconciled["is_valid"]].copy()
+    excluded = reconciled[~reconciled["is_valid"]].copy()
+
+    def _grp(df: pd.DataFrame, by: List[str], name: str) -> pd.DataFrame:
+        if df.empty or not set(by).issubset(df.columns):
+            return pd.DataFrame(columns=[*by, name])
+        return df.groupby(by).size().reset_index(name=name)
+
+    daily_valid = _grp(valid, ["shipment_date", "planning_day"], "valid_units")
+    daily_excluded = _grp(excluded, ["planning_day", "reason_code"], "excluded_units")
+    corridor_day = _grp(valid[_planning_mask(valid)], ["corridor_id", "planning_day"], "valid_units")
+
+    # corrected vs excluded breakdowns keyed on our reason_code
+    correction_breakdown = _grp(
+        valid[valid["reason_code"].isin(CORRECTED_REASONS)], ["reason_code"], "units"
+    )
+    exclusion_breakdown = _grp(excluded, ["reason_code"], "units")
+
+    corrected_cols = [c for c in
+        ["item_id", "item_name", "canonical_item_id", "canonical_item_name", "reason_code", "planning_day", "corridor_id"]
+        if c in valid.columns]
+    corrected_samples = valid[valid["reason_code"].isin(CORRECTED_REASONS)][corrected_cols].head(8)
+
+    unresolved_cols = [c for c in
+        ["item_id", "item_name", "unique_item_id", "reason_code", "planning_day", "corridor_id"]
+        if c in excluded.columns]
+    unresolved_samples = excluded[unresolved_cols].head(8)
+
+    return {
+        "daily_valid_units": _frame_to_records(daily_valid),
+        "daily_excluded_units": _frame_to_records(daily_excluded),
+        "corridor_day_breakdown": _frame_to_records(corridor_day),
+        "correction_breakdown": _frame_to_records(correction_breakdown),
+        "exclusion_breakdown": _frame_to_records(exclusion_breakdown),
+        "item_spikes": compute_item_spikes(reconciled),
+        "corrected_samples": _frame_to_records(corrected_samples),
+        "unresolved_samples": _frame_to_records(unresolved_samples),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Top-level convenience: one call, full trend payload
 # ---------------------------------------------------------------------------
 
 def compute_trend_payload(reconciled: pd.DataFrame) -> Dict[str, Any]:
-    """One-shot helper for the graph node. Bundles corridor + PoP analysis."""
+    """One-shot helper for the graph node. Bundles corridor + PoP + deep-dive analysis."""
     return {
         "comparison": compare_corridors(reconciled),
         "pop": compute_pop_trend(reconciled),
+        "deep_dive": compute_deep_dive_tables(reconciled),
     }

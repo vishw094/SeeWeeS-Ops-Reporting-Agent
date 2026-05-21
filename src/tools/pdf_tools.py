@@ -1,10 +1,13 @@
 from __future__ import annotations
 import hashlib
 import os
+import re
 import shutil
 from dataclasses import dataclass
+from pathlib import Path
 
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
+from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
@@ -58,6 +61,51 @@ def save_cached_business_context(persist_dir: str, context: str) -> None:
         f.write(context)
 
 
+def _split_markdown_by_section(md_path: str) -> list[Document]:
+    """Split a markdown file into one Document per heading block, then chunk.
+
+    Each chunk carries `section_title` and `source_name` metadata. Reference
+    tables (appendix / DQ rules / weather triggers) get larger chunks so a
+    full table survives in a single retrieval hit.
+    """
+    text = Path(md_path).read_text(encoding="utf-8")
+    name = os.path.basename(md_path)
+
+    sections: list[tuple[str, str]] = []
+    title = "Document Overview"
+    buf: list[str] = []
+    for line in text.splitlines():
+        if re.match(r"^#{1,6}\s+", line):
+            if buf:
+                sections.append((title, "\n".join(buf).strip()))
+            title = re.sub(r"^#{1,6}\s+", "", line).strip()
+            buf = []
+            continue
+        buf.append(line)
+    if buf:
+        sections.append((title, "\n".join(buf).strip()))
+
+    chunks: list[Document] = []
+    for section_title, body in sections:
+        if not body:
+            continue
+        is_reference = "|" in body or any(
+            m in section_title.lower()
+            for m in ("appendix", "data quality", "weather", "buffer", "reporting", "corridor")
+        )
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1400 if is_reference else 1000,
+            chunk_overlap=150,
+        )
+        doc = Document(
+            page_content=f"{section_title}\n\n{body}",
+            metadata={"source_name": name, "section_title": section_title,
+                      "stream": "reference" if is_reference else "policy"},
+        )
+        chunks.extend(splitter.split_documents([doc]))
+    return chunks
+
+
 @dataclass
 class PdfRag:
     persist_dir: str = "chroma_db"
@@ -67,13 +115,15 @@ class PdfRag:
         ext = os.path.splitext(pdf_path)[1].lower()
         if ext == ".pdf":
             docs = PyPDFLoader(pdf_path).load()
+            splitter = RecursiveCharacterTextSplitter(chunk_size=900, chunk_overlap=150)
+            chunks = splitter.split_documents(docs)
         elif ext in (".md", ".markdown", ".txt"):
-            docs = TextLoader(pdf_path, encoding="utf-8").load()
+            # Section-aware split: each markdown heading becomes its own
+            # document tagged with section_title, so retrieval evaluation can
+            # measure section recall and the planner sees coherent rule blocks.
+            chunks = _split_markdown_by_section(pdf_path)
         else:
             raise ValueError(f"PdfRag.build: unsupported file extension {ext!r} for {pdf_path!r}")
-
-        splitter = RecursiveCharacterTextSplitter(chunk_size=900, chunk_overlap=150)
-        chunks = splitter.split_documents(docs)
 
         fingerprint = _source_fingerprint(pdf_path)
         prior_fingerprint = _read_fingerprint(self.persist_dir)
@@ -104,3 +154,11 @@ class PdfRag:
 
     def retriever(self, vectordb: Chroma, k: int = 6):
         return vectordb.as_retriever(search_kwargs={"k": k})
+
+    def retrieve(self, vectordb: Chroma, query: str, k: int = 6, stream: str | None = None):
+        """Similarity search with optional policy/reference stream filter."""
+        if stream:
+            docs = vectordb.similarity_search(query, k=k, filter={"stream": stream})
+            if docs:
+                return docs
+        return vectordb.similarity_search(query, k=k)
