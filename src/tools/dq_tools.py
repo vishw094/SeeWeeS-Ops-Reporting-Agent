@@ -166,22 +166,32 @@ def _build_lookups() -> Dict[str, Any]:
     }
 
 
-_LOOKUPS = _build_lookups()
+# Lazy cache. We deliberately do NOT build at import time:
+# eager pandas work at import has been observed to interact badly with
+# chromadb's rust client on Windows (access violation in `add_documents`).
+_LOOKUPS_CACHE: Dict[str, Any] | None = None
+
+
+def _get_lookups() -> Dict[str, Any]:
+    global _LOOKUPS_CACHE
+    if _LOOKUPS_CACHE is None:
+        _LOOKUPS_CACHE = _build_lookups()
+    return _LOOKUPS_CACHE
 
 
 def get_item_master() -> pd.DataFrame:
     """Return a copy of the A.1 canonical master."""
-    return _LOOKUPS["master_df"].copy()
+    return _get_lookups()["master_df"].copy()
 
 
 def get_name_aliases() -> pd.DataFrame:
     """Return a copy of the A.2 alias table."""
-    return _LOOKUPS["aliases_df"].copy()
+    return _get_lookups()["aliases_df"].copy()
 
 
 def get_legacy_ids() -> pd.DataFrame:
     """Return a copy of the A.3 legacy mapping table."""
-    return _LOOKUPS["legacy_df"].copy()
+    return _get_lookups()["legacy_df"].copy()
 
 
 # ---------------------------------------------------------------------------
@@ -294,7 +304,7 @@ def reconcile_shipments(df: pd.DataFrame) -> ReconcileResult:
         hit = resolution_cache.get(key)
         if hit is not None:
             return hit
-        res = _resolve_row(item_id, item_name, _LOOKUPS)
+        res = _resolve_row(item_id, item_name, _get_lookups())
         resolution_cache[key] = res
         return res
 
@@ -319,7 +329,7 @@ def reconcile_shipments(df: pd.DataFrame) -> ReconcileResult:
         work.loc[dup_mask, "reason_code"] = REASON_DQ04
 
     # Back-fill canonical attributes from the master (preserve the row's raw item_id).
-    attrs = pd.DataFrame.from_dict(_LOOKUPS["master_by_canonical"], orient="index")
+    attrs = pd.DataFrame.from_dict(_get_lookups()["master_by_canonical"], orient="index")
     attrs.index.name = "canonical_item_id"
     attrs = attrs.reset_index().drop(columns=["item_id"])
     work = work.merge(attrs, on="canonical_item_id", how="left")

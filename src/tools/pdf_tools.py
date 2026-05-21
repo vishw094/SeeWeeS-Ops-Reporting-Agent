@@ -1,6 +1,7 @@
 from __future__ import annotations
 import hashlib
 import os
+import shutil
 from dataclasses import dataclass
 
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
@@ -9,11 +10,32 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 
 
+_FINGERPRINT_FILE = "_source_fingerprint.txt"
+
+
 def _source_fingerprint(path: str) -> str:
-    """Short stable fingerprint of (path, size, mtime) to detect source changes."""
+    """Stable fingerprint of (path, size, mtime). Tracks source changes."""
     st = os.stat(path)
     raw = f"{os.path.abspath(path)}|{st.st_size}|{int(st.st_mtime)}".encode()
     return hashlib.sha1(raw).hexdigest()[:12]
+
+
+def _read_fingerprint(persist_dir: str) -> str:
+    """Return the fingerprint of the source currently indexed in persist_dir, or '' if none."""
+    p = os.path.join(persist_dir, _FINGERPRINT_FILE)
+    if not os.path.exists(p):
+        return ""
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def _write_fingerprint(persist_dir: str, fingerprint: str) -> None:
+    os.makedirs(persist_dir, exist_ok=True)
+    with open(os.path.join(persist_dir, _FINGERPRINT_FILE), "w", encoding="utf-8") as f:
+        f.write(fingerprint)
 
 
 @dataclass
@@ -21,7 +43,7 @@ class PdfRag:
     persist_dir: str = "chroma_db"
     collection_name: str = "business_context"
 
-    def build(self, pdf_path: str) -> Chroma:
+    def build(self, pdf_path: str):
         ext = os.path.splitext(pdf_path)[1].lower()
         if ext == ".pdf":
             docs = PyPDFLoader(pdf_path).load()
@@ -33,11 +55,16 @@ class PdfRag:
         splitter = RecursiveCharacterTextSplitter(chunk_size=900, chunk_overlap=150)
         chunks = splitter.split_documents(docs)
 
-        # Tag every chunk with a fingerprint of the source so we can drop stale
-        # chunks when the same collection is rebuilt against a different file.
         fingerprint = _source_fingerprint(pdf_path)
-        for c in chunks:
-            c.metadata = {**(c.metadata or {}), "source_fingerprint": fingerprint}
+        prior_fingerprint = _read_fingerprint(self.persist_dir)
+
+        # Source changed (or first run with a different file) → wipe & rebuild.
+        # We do this at the filesystem level because chromadb's rust backend
+        # has been known to crash on `.get()` calls under Windows.
+        if prior_fingerprint and prior_fingerprint != fingerprint and os.path.isdir(self.persist_dir):
+            shutil.rmtree(self.persist_dir, ignore_errors=True)
+            print(f"[PdfRag] Source changed (fingerprint {prior_fingerprint} → {fingerprint}); wiped persist_dir.")
+            prior_fingerprint = ""
 
         embeddings = OpenAIEmbeddings()
         vectordb = Chroma(
@@ -46,26 +73,12 @@ class PdfRag:
             persist_directory=self.persist_dir,
         )
 
-        # Idempotent rebuild: purge any prior chunks not matching this source.
-        try:
-            existing = vectordb.get(include=["metadatas"])
-            stale_ids = [
-                _id for _id, md in zip(existing.get("ids", []), existing.get("metadatas", []))
-                if (md or {}).get("source_fingerprint") != fingerprint
-            ]
-            if stale_ids:
-                vectordb.delete(ids=stale_ids)
-                print(f"[PdfRag] Purged {len(stale_ids)} stale chunks from previous source.")
-        except Exception as exc:
-            print(f"[PdfRag] WARN: could not purge stale chunks: {exc}")
-
-        # Only add chunks if the collection doesn't already contain this source.
-        existing_for_source = vectordb.get(where={"source_fingerprint": fingerprint}, include=[])
-        if not existing_for_source.get("ids"):
-            vectordb.add_documents(chunks)
-            print(f"[PdfRag] Indexed {len(chunks)} chunks from {os.path.basename(pdf_path)}.")
+        if prior_fingerprint == fingerprint:
+            print(f"[PdfRag] Reusing cached index for {os.path.basename(pdf_path)} (fingerprint {fingerprint}).")
         else:
-            print(f"[PdfRag] Reusing {len(existing_for_source['ids'])} cached chunks for {os.path.basename(pdf_path)}.")
+            vectordb.add_documents(chunks)
+            _write_fingerprint(self.persist_dir, fingerprint)
+            print(f"[PdfRag] Indexed {len(chunks)} chunks from {os.path.basename(pdf_path)} (fingerprint {fingerprint}).")
 
         return vectordb
 

@@ -5,11 +5,7 @@ from typing import TypedDict, Dict, Any, List
 from langgraph.graph import StateGraph, END
 from dotenv import load_dotenv
 
-import pandas as pd
-
 from tools.pdf_tools import PdfRag
-from tools.dq_tools import reconcile_shipments
-from tools.trend_tools import compare_corridors, compute_pop_trend
 from tools.weather_tools import get_weather_forecast, derive_dispatch_weather_risk
 from tools.email_tools import send_email_smtp
 from agents import (
@@ -19,6 +15,11 @@ from agents import (
     run_audit_agent,
     run_report_agent,
 )
+
+# NOTE: `pandas`, `tools.dq_tools`, and `tools.trend_tools` are imported lazily
+# inside `node_dq_reconcile`. Importing pandas at module load time on Windows
+# has been observed to corrupt chromadb's rust client and segfault the very
+# first `vectordb.add_documents()` call in `node_pdf_context`.
 
 load_dotenv()
 
@@ -75,6 +76,11 @@ def node_dq_reconcile(state: AppState) -> AppState:
     Replaces the legacy generic-CSV analysis node. Output is fully deterministic
     so the AuditAgent can verify it against the playbook.
     """
+    # Local imports: see top-of-file note on the pandas/chromadb DLL conflict.
+    import pandas as pd
+    from tools.dq_tools import reconcile_shipments
+    from tools.trend_tools import compare_corridors, compute_pop_trend
+
     df = pd.read_csv(state["csv_path"])
 
     result = reconcile_shipments(df)
