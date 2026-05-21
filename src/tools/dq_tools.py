@@ -78,6 +78,27 @@ CONF_ALIAS     = "ALIAS_MATCH"
 CONF_LEGACY    = "LEGACY_ID_MAP"
 CONF_NONE      = "NONE"
 
+
+# Tier assignment — derived from §7 of the playbook (Tier 1 = life-critical,
+# Tier 2 = standard specialty) cross-referenced with the medicine_type catalog
+# in Appendix A.1. Kept here next to the master tables so the SLA tier is
+# back-filled at reconciliation time and visible to every downstream consumer.
+TIER_BY_MEDICINE_TYPE: Dict[str, int] = {
+    "Antiviral":            1,
+    "Hormone":              1,
+    "Monoclonal Antibody":  1,
+    "Emergency Drug":       1,
+    "Anticoagulant":        1,
+    "Clinical Trial Drug":  1,
+    "Opioid Analgesic":     2,
+    "Bronchodilator":       2,
+}
+
+
+def assign_tier(medicine_type: Any) -> int:
+    """Return SLA tier (1 or 2) for a given medicine_type. Unknown defaults to 2."""
+    return TIER_BY_MEDICINE_TYPE.get(medicine_type, 2)
+
 REQUIRED_COLUMNS = (
     "shipment_date", "planning_day", "is_planning_window",
     "corridor_id", "item_id", "item_name", "unique_item_id", "dispatch_location",
@@ -334,6 +355,10 @@ def reconcile_shipments(df: pd.DataFrame) -> ReconcileResult:
     attrs = attrs.reset_index().drop(columns=["item_id"])
     work = work.merge(attrs, on="canonical_item_id", how="left")
 
+    # Decorate every row with its SLA tier so trend / planner / audit code
+    # can read it as a column rather than re-deriving from medicine_type.
+    work["sla_tier"] = work["medicine_type"].map(assign_tier).astype("Int64")
+
     # is_valid: only EXACT / ALIAS / LEGACY resolved rows that aren't DQ-01/DQ-04
     valid_reasons = {REASON_EXACT, REASON_ALIAS, REASON_LEGACY}
     work["is_valid"] = work["reason_code"].isin(valid_reasons) & has_uid
@@ -380,3 +405,21 @@ def reconcile_shipments(df: pd.DataFrame) -> ReconcileResult:
     }
 
     return ReconcileResult(reconciled=work, valid=valid, report=report)
+
+
+# ---------------------------------------------------------------------------
+# Self-check / dev sanity block — run `python -m tools.dq_tools <csv>` from src/
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    import json
+    import sys
+
+    csv_path = sys.argv[1] if len(sys.argv) > 1 else "data-for-enhancement/Incoming_shipments_14d_multi_corridor.csv"
+    raw = pd.read_csv(csv_path)
+    out = reconcile_shipments(raw)
+    print(json.dumps(out.report, indent=2, default=str))
+    print(f"\nReconciled columns: {list(out.reconciled.columns)}")
+    print(f"Valid rows: {len(out.valid)} / Total rows: {len(out.reconciled)}")
+    if "sla_tier" in out.reconciled.columns:
+        print("SLA tier mix on valid rows:")
+        print(out.valid["sla_tier"].value_counts().to_dict())

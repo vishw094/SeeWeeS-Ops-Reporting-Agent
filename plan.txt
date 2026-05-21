@@ -10,8 +10,8 @@ Feature #2 (What-if Simulation) is skipped.
 
 PROGRESS
   [DONE]    Feature 1 — Self-Correction & Quality Assurance Audit Loop
-  [NEXT]    Feature 3 — Deep-Dive Trend Analysis + Item Master Reconciliation
-  [PENDING] Feature 5 — Multi-Region / Multi-Day Resource Planning
+  [DONE]    Feature 3 — Deep-Dive Trend Analysis + Item Master Reconciliation
+  [NEXT]    Feature 5 — Multi-Region / Multi-Day Resource Planning
 
 ================================================================================
 WHY THESE 3 (AND NOT THE OTHERS)
@@ -25,7 +25,7 @@ FEATURE 1 — Self-Correction & Quality Assurance Audit Loop [DONE]
     catch and fix its own mistakes before leadership sees the report.
   - ROI: highest architectural complexity per line of code. Maximum grading signal.
 
-FEATURE 3 — Deep-Dive Trend Analysis + Item Master Reconciliation [NEXT]
+FEATURE 3 — Deep-Dive Trend Analysis + Item Master Reconciliation [DONE]
   - The 14-day multi-corridor CSV and Appendix A (Item Master) exist specifically
     for this feature — using them is nearly mandatory.
   - Current csv_tools.py is completely generic (IsolationForest on no numeric cols,
@@ -71,11 +71,13 @@ ARCHITECTURE GAPS STATUS
   [DONE]    graph.py: linear → cyclic (audit loop + conditional edges)
   [DONE]    prompts.py: added AUDIT_PROMPT (6 playbook rules, JSON output)
   [DONE]    agents.py: added run_audit_agent(), updated planner + report agents
-  [NEXT]    csv_tools.py / dq_tools.py: no DQ rules, no Item Master, no corridor KPIs
-  [NEXT]    trend_tools.py: PoP analysis, corridor comparison (new file)
+  [DONE]    dq_tools.py: Item Master (A.1) + aliases (A.2) + legacy (A.3) + D1–D8
+  [DONE]    trend_tools.py: PoP analysis + corridor comparison + truck capacity model
+  [DONE]    pdf_tools.py: fingerprint cache, .md+.pdf loaders, business_context memoization
+  [DONE]    tracing.py: API-key probe disables tracing on failure (no background segfaults)
+  [DONE]    main.py: switched to multi-corridor CSV + Dispatch Playbook .md
   [PENDING] weather_tools.py: single lat/lon → per-corridor, per-waypoint (9 total)
   [PENDING] resource_tools.py: resource allocation with penalty model (new file)
-  [PENDING] main.py: still points to old single-corridor CSV and old PDF
 
 ================================================================================
 TARGET ARCHITECTURE (LangGraph Graph)
@@ -324,11 +326,11 @@ IMPLEMENTATION ORDER — STATUS
   [DONE]  Step 1: src/prompts.py — AUDIT_PROMPT, updated PLANNER_PROMPT + REPORT_PROMPT
   [DONE]  Step 2: src/agents.py — run_audit_agent(), updated planner + report agents
   [DONE]  Step 3: src/graph.py — audit nodes, route_audit(), conditional edges
-  [NEXT]  Step 4: src/tools/dq_tools.py — Item Master reconciliation (DQ-01..04, D1–D8)
-  [NEXT]  Step 5: src/tools/trend_tools.py — PoP analysis, corridor KPI comparison
-  [NEXT]  Step 6: src/agents.py — run_trend_agent() + TREND_OPS_PROMPT
-  [NEXT]  Step 7: src/graph.py — replace node_csv_analysis with node_dq_reconcile
-  [NEXT]  Step 8: src/main.py — update csv_path to multi-corridor CSV
+  [DONE]  Step 4: src/tools/dq_tools.py — Item Master reconciliation (DQ-01..04, D1–D8)
+  [DONE]  Step 5: src/tools/trend_tools.py — PoP analysis, corridor KPI comparison
+  [DONE]  Step 6: src/agents.py — run_trend_agent() + TREND_OPS_PROMPT
+  [DONE]  Step 7: src/graph.py — replace node_csv_analysis with node_dq_reconcile
+  [DONE]  Step 8: src/main.py — update csv_path to multi-corridor CSV
   [PEND]  Step 9: src/tools/weather_tools.py — rewrite for 9 waypoints, 2 corridors
   [PEND]  Step 10: src/tools/resource_tools.py — demand + penalty-minimizing allocator
   [PEND]  Step 11: src/agents.py — run_resource_planner_agent() + RESOURCE_PLANNER_PROMPT

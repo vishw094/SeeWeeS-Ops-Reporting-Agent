@@ -30,24 +30,6 @@ PACKING_BUFFER = 1.10          # §7.1 — +10% inefficiency buffer
 
 TEMP_CONTROLLED_VALUES = {"Cold (2-8C)", "Strict Cold Chain (-20C)"}
 
-# Tier assignment derived from §7 (Tier 1 = life-critical, Tier 2 = standard specialty)
-# combined with the medicine_type catalog in Appendix A.1.
-_TIER_BY_MEDICINE_TYPE: Dict[str, int] = {
-    "Antiviral":            1,
-    "Hormone":              1,
-    "Monoclonal Antibody":  1,
-    "Emergency Drug":       1,
-    "Anticoagulant":        1,
-    "Clinical Trial Drug":  1,
-    "Opioid Analgesic":     2,
-    "Bronchodilator":       2,
-}
-
-
-def assign_tier(medicine_type: Any) -> int:
-    """Return SLA tier (1 or 2) for a given medicine_type. Unknown -> 2."""
-    return _TIER_BY_MEDICINE_TYPE.get(medicine_type, 2)
-
 
 def required_trucks(volume: int) -> int:
     """Capacity model from §7.2: ceil(volume * 1.10 / 10)."""
@@ -84,8 +66,14 @@ def _kpis_for_slice(slice_df: pd.DataFrame) -> Dict[str, Any]:
     controlled_units = int((valid["temp_control"] == "Controlled Storage").sum())
     room_temp_units = valid_units - cold_chain_units - controlled_units
 
-    tiers = valid["medicine_type"].map(assign_tier)
-    tier1_units = int((tiers == 1).sum())
+    # Prefer the back-filled `sla_tier` column (annotated by dq_tools.reconcile_shipments).
+    # Fall back to re-deriving from medicine_type if a caller passes in raw rows.
+    if "sla_tier" in valid.columns:
+        tier_series = valid["sla_tier"]
+    else:
+        from tools.dq_tools import assign_tier  # local import avoids module-load order coupling
+        tier_series = valid["medicine_type"].map(assign_tier)
+    tier1_units = int((tier_series == 1).sum())
     tier2_units = valid_units - tier1_units
 
     # §7.2 capacity model: cold-chain → temp-controlled trucks; everything else → standard

@@ -4,191 +4,186 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Dispatch Plan Report - Leadership Summary</title>
+<title>Dispatch Planning Report - Next 48 Hours</title>
 <style>
-  body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.5; color: #222; }
+  body { font-family: Arial, sans-serif; margin: 20px; color: #222; }
   h1, h2, h3 { color: #004080; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+  th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+  th { background-color: #e6f0ff; }
   ul { margin-top: 0; }
-  section { margin-bottom: 30px; }
-  .kpi-table { border-collapse: collapse; width: 100%; max-width: 700px; margin-top: 10px; }
-  .kpi-table th, .kpi-table td { border: 1px solid #ccc; padding: 6px 10px; text-align: center; }
-  .kpi-table th { background-color: #e6f0ff; }
-  .highlight { font-weight: bold; color: #b30000; }
+  .section { margin-bottom: 40px; }
+  .notes { font-size: 0.9em; color: #555; }
 </style>
 </head>
 <body>
 
-<h1>Dispatch Plan Report: Next 48 Hours (Day0 + Day1)</h1>
+<h1>Dispatch Planning Report: Next 48 Hours (Day0 + Day1)</h1>
 
-<section>
-  <h2>1. Shipment Inclusion & Data Quality</h2>
-  <ul>
-    <li>Excluded 5 shipment rows missing <code>unique_item_id</code>:
-      <ul>
-        <li>3 from corridor <strong>C1_I95_NJ_BOS</strong> (Remdesivir)</li>
-        <li>2 from corridor <strong>C2_NJ_PHL</strong> (Insulin Lispro)</li>
-      </ul>
-    </li>
-    <li>No flagged or invalid shipments remain; data quality compliant.</li>
-    <li>All exclusions logged with reason codes for audit and follow-up.</li>
-  </ul>
-</section>
-
-<section>
-  <h2>2. Resource Allocation by Corridor</h2>
-  <table class="kpi-table" aria-label="Resource Allocation Summary">
+<div class="section">
+  <h2>1) Dispatch Plan Summary</h2>
+  <table>
     <thead>
       <tr>
         <th>Corridor</th>
-        <th>Drivers Required</th>
-        <th>Standard Trucks</th>
-        <th>Temp-Controlled Trucks</th>
+        <th>Valid Units</th>
+        <th>Tier-1 %</th>
         <th>Cold-Chain %</th>
+        <th>Exclusion Rate</th>
+        <th>Drivers</th>
+        <th>Std Trucks</th>
+        <th>Temp-Controlled Trucks</th>
+        <th>Notes / Rationale</th>
       </tr>
     </thead>
     <tbody>
       <tr>
         <td>C1_I95_NJ_BOS</td>
+        <td>63</td>
+        <td>77.8%</td>
+        <td>53.97%</td>
+        <td>4.55%</td>
         <td>2</td>
         <td>1</td>
         <td>1</td>
-        <td>56.25%</td>
+        <td class="notes">
+          Maintain 2 drivers and 1 temp-controlled truck to meet cold-chain demand (56.25% cold-chain load). Contingency buffer for 11.11% exclusion risk. Monitor Tier-1 share decline.
+        </td>
       </tr>
       <tr>
         <td>C2_NJ_PHL</td>
+        <td>61</td>
+        <td>75.41%</td>
+        <td>50.82%</td>
+        <td>3.17%</td>
         <td>2</td>
         <td>1</td>
         <td>1</td>
-        <td>50.00%</td>
+        <td class="notes">
+          Maintain 2 drivers and 1 temp-controlled truck. Cold-chain demand stable at 50%. Lower exclusion risk.
+        </td>
       </tr>
     </tbody>
   </table>
-  <ul>
-    <li>Resource pools balanced per corridor to maintain SLA compliance and minimize penalties.</li>
-    <li>Temp-controlled trucks allocated to avoid cold-chain violations (+80 penalty points per unit).</li>
-  </ul>
-</section>
 
-<section>
-  <h2>3. SLA & Dispatch Prioritization</h2>
+  <h3>Resource Allocation</h3>
   <ul>
-    <li>Priority given to Tier 1 shipments, especially in <strong>C1_I95_NJ_BOS</strong> where Tier 1 share declined to ~69.57%.</li>
-    <li>Resources allocated to ensure Tier 1 SLA compliance to avoid 100-point penalties.</li>
-    <li>Tier 2 shipments dispatched within SLA; minor delays allowed if needed (10-point penalty for late but within SLA).</li>
-    <li>Consistent travel buffers applied, accounting for minimal weather risk.</li>
+    <li>Drivers: 2 per corridor (meets truck requirements, avoids delay)</li>
+    <li>Standard Trucks: 1 per corridor</li>
+    <li>Temp-Controlled Trucks: 1 per corridor (reflects cold-chain shipment share)</li>
   </ul>
-</section>
 
-<section>
-  <h2>4. Weather Risk & Travel Buffers</h2>
+  <h3>Shipment Exclusions</h3>
   <ul>
-    <li>Weather risk score: <strong>0</strong> (no heavy rain, high wind, or freezing risk).</li>
-    <li>Minimal travel buffers applied; standard dispatch timing maintained.</li>
-    <li>Ongoing monitoring of weather updates recommended.</li>
+    <li>5 shipments excluded due to missing unique_item_id (3 in C1 for Remdesivir, 2 in C2 for Insulin Lispro). Logged and excluded per data quality rules.</li>
+    <li>No invalid IDs, name mismatches, or duplicates detected.</li>
   </ul>
-</section>
 
-<section>
-  <h2>5. Penalty Minimization Strategy</h2>
+  <h3>Weather Risk</h3>
   <ul>
-    <li>Ensure temp-controlled truck availability to prevent cold-chain violations.</li>
-    <li>Prioritize Tier 1 shipments to avoid high SLA violation penalties.</li>
-    <li>Accept minor Tier 2 shipment delays when resources are constrained to minimize total penalty.</li>
-    <li>All trade-offs documented with numeric penalty weights for transparency.</li>
+    <li>Minimal weather risk (risk score 0).</li>
+    <li>No heavy rain, high wind, or freezing risk expected.</li>
+    <li>No travel buffers needed beyond standard operational buffers.</li>
   </ul>
-</section>
 
-<section>
-  <h2>6. KPI Summary & Comparison Across Corridors</h2>
-  <table class="kpi-table" aria-label="KPI Comparison by Corridor">
+  <h3>SLA Risk</h3>
+  <ul>
+    <li>Prioritize Tier-1 shipments to avoid 100-point penalties.</li>
+    <li>Cold-chain shipments must use temp-controlled trucks to avoid +80 penalty per unit.</li>
+    <li>Minimize non-SLA delays to avoid 10-point penalties.</li>
+  </ul>
+
+  <h3>Dispatch Heuristics Applied</h3>
+  <ul>
+    <li>Minimized total penalty score by ensuring Tier-1 and cold-chain shipments dispatched within SLA.</li>
+    <li>Maintained driver and truck resources to avoid dispatch delays.</li>
+    <li>Monitoring declining Tier-1 share in C1 corridor to maintain service quality.</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h2>2) What to Monitor</h2>
+  <ul>
+    <li><strong>Data Quality:</strong> Continue monitoring missing unique_item_id issues, especially Remdesivir and Insulin Lispro. Aim to reduce exclusions.</li>
+    <li><strong>SLA Compliance:</strong> Track SLA risk flags daily, especially for Tier-1 shipments.</li>
+    <li><strong>Cold-Chain Handling:</strong> Ensure temp-controlled trucks are used appropriately.</li>
+    <li><strong>Resource Utilization:</strong> Confirm driver and truck availability matches plan; watch for shortages causing delays.</li>
+    <li><strong>Shipment Volume & Mix:</strong> Monitor Tier-1 / Tier-2 mix trends, especially Tier-1 share decline in C1 corridor.</li>
+    <li><strong>Weather Conditions:</strong> Continue monitoring forecasts for changes impacting travel safety or timing.</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h2>3) Contingency Triggers</h2>
+  <ul>
+    <li><strong>Data Quality:</strong> If missing UID exclusions exceed 5% of shipments, trigger investigation and corrective action.</li>
+    <li><strong>Resource Shortage:</strong> If drivers or trucks fall below planned levels (e.g., &lt;2 drivers or &lt;1 temp-controlled truck per corridor), trigger reallocation or escalation.</li>
+    <li><strong>SLA Risk Flags:</strong> If SLA risk flags increase for Tier-1 shipments, initiate priority dispatch and consider overtime or temp staffing.</li>
+    <li><strong>Weather Risk:</strong> If weather risk flags rise (heavy rain, high wind, freezing), apply travel buffers and consider rescheduling non-critical shipments.</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h2>4) Expected KPI Impacts</h2>
+  <table>
     <thead>
       <tr>
         <th>KPI</th>
-        <th>C1_I95_NJ_BOS</th>
-        <th>C2_NJ_PHL</th>
+        <th>Expected Impact / Notes</th>
       </tr>
     </thead>
     <tbody>
       <tr>
-        <td>Total Shipments (valid units)</td>
-        <td>16</td>
-        <td>14</td>
+        <td>Shipment Volume</td>
+        <td>Stable volumes with minor fluctuations (-1 to +1 unit)</td>
       </tr>
       <tr>
-        <td>Excluded Shipments</td>
-        <td>2 (11.11%)</td>
-        <td>1 (6.67%)</td>
+        <td>Excluded Shipment Count/Rate</td>
+        <td>Maintain low exclusion rate (~4-5%), focus on reducing missing UID exclusions</td>
       </tr>
       <tr>
-        <td>Tier 1 Shipments</td>
-        <td>12 (75%)</td>
-        <td>11 (78.57%)</td>
+        <td>Tier-1 / Tier-2 Mix</td>
+        <td>Slight decline in Tier-1 share in C1 corridor; monitor closely</td>
       </tr>
       <tr>
-        <td>Tier 2 Shipments</td>
-        <td>4 (25%)</td>
-        <td>3 (21.43%)</td>
+        <td>SLA Risk Flags</td>
+        <td>Low risk expected with current resource allocation and weather conditions</td>
       </tr>
       <tr>
-        <td>Cold-Chain Shipments</td>
-        <td>9 (56.25%)</td>
-        <td>7 (50%)</td>
+        <td>Weather Risk Summary</td>
+        <td>Minimal risk, no impact expected on dispatch timing</td>
+      </tr>
+      <tr>
+        <td>Total Penalty Score</td>
+        <td>Minimized by adherence to SLA and cold-chain requirements; expect low penalty score</td>
+      </tr>
+      <tr>
+        <td>Resource Allocation</td>
+        <td>Adequate drivers and trucks allocated to meet demand</td>
       </tr>
     </tbody>
   </table>
-</section>
+</div>
 
-<section>
-  <h2>7. SLA Risk Flags</h2>
+<div class="section">
+  <h2>Final Notes</h2>
   <ul>
-    <li>Tier 1 SLA risk prioritized in <strong>C1_I95_NJ_BOS</strong> due to reduced Tier 1 share.</li>
-    <li>No current SLA violation flags expected given resource allocation and stable weather.</li>
+    <li>All audit violations addressed; only missing UID exclusions remain per policy.</li>
+    <li>Dispatch plan prioritizes SLA compliance, safety, and cost minimization.</li>
+    <li>Weather risk is low; no additional travel buffers applied beyond standard operational buffers.</li>
+    <li>Recommend ongoing monitoring and rapid response to changes in data quality, resource availability, or weather.</li>
   </ul>
-</section>
+  <p>Please confirm if detailed shipment-level dispatch schedules or further corridor-level trade-off analyses are required.</p>
+</div>
 
-<section>
-  <h2>8. Monitoring & Contingency Triggers</h2>
-  <ul>
-    <li><strong>Monitor:</strong>
-      <ul>
-        <li>Shipment exclusions and data quality issues, especially missing <code>unique_item_id</code>.</li>
-        <li>Tier 1 SLA risk flags per corridor.</li>
-        <li>Cold-chain shipment handling and temperature control compliance.</li>
-        <li>Daily resource utilization (drivers, trucks).</li>
-        <li>Weather updates for emerging risks.</li>
-        <li>Shipment volume and Tier 1/Tier 2 mix trends.</li>
-      </ul>
-    </li>
-    <li><strong>Contingency Triggers:</strong>
-      <ul>
-        <li>Missing UID exclusions >5% → urgent data quality review.</li>
-        <li>Weather risk flags (heavy rain, high wind, freezing) → increase travel buffers, possible rescheduling.</li>
-        <li>Resource shortages → penalty-weighted reprioritization of Tier 1 shipments.</li>
-        <li>Rising SLA risk flags → escalation and potential additional temp-controlled truck allocation.</li>
-      </ul>
-    </li>
-  </ul>
-</section>
-
-<section>
-  <h2>9. Summary</h2>
-  <ul>
-    <li>Plan ensures SLA compliance prioritizing Tier 1 shipments and cold-chain integrity.</li>
-    <li>All data quality exclusions explicitly addressed and logged.</li>
-    <li>Resource allocation aligned with shipment volume and cold-chain demand per corridor.</li>
-    <li>Minimal weather risk allows standard travel buffers.</li>
-    <li>Monitoring and contingency plans in place to respond to changes, minimizing total penalty score and maintaining service quality.</li>
-  </ul>
-</section>
-
-<section>
+<div class="section">
   <h2>Audit Trail</h2>
   <ul>
     <li>Audit cycles completed: <strong>1</strong></li>
     <li>Final audit result: <strong>PASSED</strong></li>
     <li>Human escalation triggered: <strong>No</strong></li>
   </ul>
-</section>
+</div>
 
 </body>
 </html>

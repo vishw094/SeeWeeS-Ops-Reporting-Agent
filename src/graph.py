@@ -1,6 +1,8 @@
 from __future__ import annotations
 import os
-from typing import TypedDict, Dict, Any, List
+import time
+from functools import wraps
+from typing import Any, Callable, Dict, List, TypedDict
 
 from langgraph.graph import StateGraph, END
 from dotenv import load_dotenv
@@ -54,9 +56,28 @@ class AppState(TypedDict, total=False):
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _timed(label: str) -> Callable:
+    """Wrap a node so its wall-clock duration is printed when it returns."""
+    def decorator(fn: Callable) -> Callable:
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            t0 = time.perf_counter()
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                print(f"[Timing] {label} took {time.perf_counter() - t0:.2f}s")
+        return wrapper
+    return decorator
+
+
+# ---------------------------------------------------------------------------
 # Nodes
 # ---------------------------------------------------------------------------
 
+@_timed("pdf_context")
 def node_pdf_context(state: AppState) -> AppState:
     persist_dir = "chroma_db"
     rag = PdfRag(persist_dir=persist_dir)
@@ -80,6 +101,7 @@ def node_pdf_context(state: AppState) -> AppState:
     return {"business_context": business_context}
 
 
+@_timed("dq_reconcile")
 def node_dq_reconcile(state: AppState) -> AppState:
     """Feature 3 — Item Master reconciliation + corridor / PoP trend analysis.
 
@@ -127,6 +149,7 @@ def node_dq_reconcile(state: AppState) -> AppState:
     }
 
 
+@_timed("weather")
 def node_weather(state: AppState) -> AppState:
     lat = os.getenv("WEATHER_LAT", "40.7282")
     lon = os.getenv("WEATHER_LON", "-74.0776")
@@ -137,6 +160,7 @@ def node_weather(state: AppState) -> AppState:
     return {"weather_forecast": forecast, "weather_risk": risk}
 
 
+@_timed("planner")
 def node_planner(state: AppState) -> AppState:
     violations = state.get("audit_violations", [])
     plan = run_planner_agent(
@@ -148,6 +172,7 @@ def node_planner(state: AppState) -> AppState:
     return {"dispatch_plan": plan}
 
 
+@_timed("audit")
 def node_audit(state: AppState) -> AppState:
     retries = state.get("audit_retries", 0)
     prior_violations = state.get("audit_violations", [])
@@ -202,6 +227,7 @@ def node_human_checkpoint(state: AppState) -> AppState:
     return {"human_approved": True}
 
 
+@_timed("report")
 def node_report(state: AppState) -> AppState:
     retries = state.get("audit_retries", 0)
     violations = state.get("audit_violations", [])
