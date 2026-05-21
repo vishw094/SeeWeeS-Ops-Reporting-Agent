@@ -11,6 +11,7 @@ from langchain_chroma import Chroma
 
 
 _FINGERPRINT_FILE = "_source_fingerprint.txt"
+_CONTEXT_CACHE_FILE = "_business_context.txt"
 
 
 def _source_fingerprint(path: str) -> str:
@@ -36,6 +37,25 @@ def _write_fingerprint(persist_dir: str, fingerprint: str) -> None:
     os.makedirs(persist_dir, exist_ok=True)
     with open(os.path.join(persist_dir, _FINGERPRINT_FILE), "w", encoding="utf-8") as f:
         f.write(fingerprint)
+
+
+def load_cached_business_context(persist_dir: str) -> str:
+    """Return the previously-extracted business_context for the indexed source, or ''."""
+    p = os.path.join(persist_dir, _CONTEXT_CACHE_FILE)
+    if not os.path.exists(p):
+        return ""
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def save_cached_business_context(persist_dir: str, context: str) -> None:
+    """Persist business_context alongside the chroma index so reruns skip the LLM call."""
+    os.makedirs(persist_dir, exist_ok=True)
+    with open(os.path.join(persist_dir, _CONTEXT_CACHE_FILE), "w", encoding="utf-8") as f:
+        f.write(context)
 
 
 @dataclass

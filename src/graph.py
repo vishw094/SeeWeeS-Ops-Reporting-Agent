@@ -5,7 +5,7 @@ from typing import TypedDict, Dict, Any, List
 from langgraph.graph import StateGraph, END
 from dotenv import load_dotenv
 
-from tools.pdf_tools import PdfRag
+from tools.pdf_tools import PdfRag, load_cached_business_context, save_cached_business_context
 from tools.weather_tools import get_weather_forecast, derive_dispatch_weather_risk
 from tools.email_tools import send_email_smtp
 from agents import (
@@ -58,15 +58,25 @@ class AppState(TypedDict, total=False):
 # ---------------------------------------------------------------------------
 
 def node_pdf_context(state: AppState) -> AppState:
-    rag = PdfRag(persist_dir="chroma_db")
+    persist_dir = "chroma_db"
+    rag = PdfRag(persist_dir=persist_dir)
     vectordb = rag.build(state["pdf_path"])
-    retriever = rag.retriever(vectordb, k=6)
 
+    # If the source is unchanged, reuse the previously-extracted context and
+    # skip both the retriever call and the ContextAgent LLM round-trip.
+    cached = load_cached_business_context(persist_dir)
+    if cached:
+        print("[ContextAgent] Cache hit — reusing business_context.")
+        return {"business_context": cached}
+
+    retriever = rag.retriever(vectordb, k=6)
     query = "Extract KPI definitions, thresholds, SLAs, constraints, dispatch rules, exceptions."
     docs = retriever.invoke(query)
     snippets = "\n\n---\n\n".join(d.page_content for d in docs)
 
     business_context = run_context_agent(snippets)
+    save_cached_business_context(persist_dir, business_context)
+    print("[ContextAgent] Extracted and cached business_context.")
     return {"business_context": business_context}
 
 

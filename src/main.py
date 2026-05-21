@@ -1,13 +1,14 @@
 from __future__ import annotations
 from dotenv import load_dotenv
 load_dotenv()  # must be before importing graph/agents
+
 from tracing import init_langsmith_tracing
 init_langsmith_tracing()  # must be before importing graph/agents
+
 from graph import build_graph
 
 
 if __name__ == "__main__":
- 
     app = build_graph()
 
     state = {
