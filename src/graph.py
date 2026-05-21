@@ -5,13 +5,16 @@ from typing import TypedDict, Dict, Any, List
 from langgraph.graph import StateGraph, END
 from dotenv import load_dotenv
 
+import pandas as pd
+
 from tools.pdf_tools import PdfRag
-from tools.csv_tools import analyze_csv
+from tools.dq_tools import reconcile_shipments
+from tools.trend_tools import compare_corridors, compute_pop_trend
 from tools.weather_tools import get_weather_forecast, derive_dispatch_weather_risk
 from tools.email_tools import send_email_smtp
 from agents import (
     run_context_agent,
-    run_ops_agent,
+    run_trend_agent,
     run_planner_agent,
     run_audit_agent,
     run_report_agent,
@@ -28,10 +31,12 @@ class AppState(TypedDict, total=False):
 
     business_context: str
 
-    csv_summary: Dict[str, Any]
-    csv_kpis: Dict[str, Any]
-    anomalies_md: str
-    ops_insights: str
+    # Feature 3 — DQ reconciliation + trend analysis
+    dq_report: Dict[str, Any]
+    corridor_comparison: Dict[str, Any]
+    pop_trend: Dict[str, Any]
+    canonical_df_json: str          # serialized reconciled rows for downstream agents
+    ops_insights: str               # narrated by run_trend_agent
 
     weather_forecast: Dict[str, Any]
     weather_risk: Dict[str, Any]
@@ -64,19 +69,44 @@ def node_pdf_context(state: AppState) -> AppState:
     return {"business_context": business_context}
 
 
-def node_csv_analysis(state: AppState) -> AppState:
-    res = analyze_csv(state["csv_path"])
+def node_dq_reconcile(state: AppState) -> AppState:
+    """Feature 3 — Item Master reconciliation + corridor / PoP trend analysis.
 
-    anomalies_md = "(none detected or insufficient numeric data)"
-    if not res.anomalies.empty:
-        anomalies_md = res.anomalies.head(12).to_markdown(index=False)
+    Replaces the legacy generic-CSV analysis node. Output is fully deterministic
+    so the AuditAgent can verify it against the playbook.
+    """
+    df = pd.read_csv(state["csv_path"])
 
-    ops_insights = run_ops_agent(summary=res.summary, kpis=res.kpis, anomalies_md=anomalies_md)
+    result = reconcile_shipments(df)
+    comparison = compare_corridors(result.reconciled)
+    pop = compute_pop_trend(result.reconciled)
+
+    print(
+        f"\n[DQReconcile] total={result.report['total_rows']} "
+        f"valid={result.report['valid_rows']} "
+        f"excluded={result.report['excluded_rows']} "
+        f"flagged={result.report['flagged_rows']} "
+        f"(DQ-01={result.report['dq01_missing_uid']}, "
+        f"DQ-02={result.report['dq02_invalid_id']}, "
+        f"DQ-03={result.report['dq03_name_mismatch']}, "
+        f"DQ-04={result.report['dq04_duplicate_uid']})"
+    )
+
+    ops_insights = run_trend_agent(
+        dq_report=result.report,
+        corridor_comparison=comparison,
+        pop_trend=pop,
+    )
+
+    # Keep the reconciled rows on the state for Feature 5 (resource allocation).
+    # JSON-serialized to stay safely picklable inside LangGraph state.
+    canonical_df_json = result.valid.to_json(orient="records", date_format="iso")
 
     return {
-        "csv_summary": res.summary,
-        "csv_kpis": res.kpis,
-        "anomalies_md": anomalies_md,
+        "dq_report": result.report,
+        "corridor_comparison": comparison,
+        "pop_trend": pop,
+        "canonical_df_json": canonical_df_json,
         "ops_insights": ops_insights,
     }
 
@@ -169,10 +199,35 @@ def node_report(state: AppState) -> AppState:
     if violations:
         audit_trail += "Remaining violations logged:\n" + "\n".join(f"  - {v}" for v in violations)
 
+    dq_report = state.get("dq_report", {})
+    comparison = state.get("corridor_comparison", {})
+
+    # Build the "kpis" + "anomaly_highlights" blocks from the new Feature-3 outputs
+    # so the existing REPORT_PROMPT contract is honored without invasive prompt edits.
+    kpis_for_report: Dict[str, Any] = {
+        "by_corridor_planning_window": comparison.get("planning_window", {}),
+        "by_corridor_history": comparison.get("history", {}),
+        "pop_overall_delta": state.get("pop_trend", {}).get("overall", {}).get("delta", {}),
+    }
+    anomaly_highlights = (
+        f"DQ-01 missing uid: {dq_report.get('dq01_missing_uid', 0)} | "
+        f"DQ-02 invalid id: {dq_report.get('dq02_invalid_id', 0)} | "
+        f"DQ-03 name mismatch: {dq_report.get('dq03_name_mismatch', 0)} | "
+        f"DQ-04 duplicate uid: {dq_report.get('dq04_duplicate_uid', 0)}"
+    )
+    excluded_sample = dq_report.get("excluded_sample", [])
+    if excluded_sample:
+        anomaly_highlights += "\nExcluded sample (first 10):\n" + "\n".join(
+            f"  - corridor={r.get('corridor_id')} item={r.get('item_id')} "
+            f"name={r.get('item_name')!r} uid={r.get('unique_item_id')!r} "
+            f"reason={r.get('reason_code')}"
+            for r in excluded_sample
+        )
+
     html = run_report_agent(
         business_context=state.get("business_context", ""),
-        kpis=state.get("csv_kpis", {}),
-        anomaly_highlights=state.get("anomalies_md", "(none)"),
+        kpis=kpis_for_report,
+        anomaly_highlights=anomaly_highlights,
         weather_risk=state.get("weather_risk", {}),
         dispatch_plan=state.get("dispatch_plan", ""),
         audit_trail=audit_trail,
@@ -217,7 +272,7 @@ def build_graph():
     g = StateGraph(AppState)
 
     g.add_node("pdf_context", node_pdf_context)
-    g.add_node("csv_analysis", node_csv_analysis)
+    g.add_node("dq_reconcile", node_dq_reconcile)
     g.add_node("weather", node_weather)
     g.add_node("planner", node_planner)
     g.add_node("audit", node_audit)
@@ -226,8 +281,8 @@ def build_graph():
     g.add_node("email", node_email)
 
     g.set_entry_point("pdf_context")
-    g.add_edge("pdf_context", "csv_analysis")
-    g.add_edge("csv_analysis", "weather")
+    g.add_edge("pdf_context", "dq_reconcile")
+    g.add_edge("dq_reconcile", "weather")
     g.add_edge("weather", "planner")
     g.add_edge("planner", "audit")
     g.add_conditional_edges(

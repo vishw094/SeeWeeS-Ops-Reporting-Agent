@@ -19,6 +19,28 @@ OPS_ANALYSIS_PROMPT = ChatPromptTemplate.from_messages([
      "Return:\n- Key findings\n- Possible root causes\n- Next checks\n- Immediate actions\n")
 ])
 
+TREND_OPS_PROMPT = ChatPromptTemplate.from_messages([
+    ("system",
+     "You are TrendOpsAgent. You read deterministic shipment KPIs and DQ reports for the SeeWeeS "
+     "specialty-medicine dispatch network and translate them into operations insight for leadership. "
+     "DO NOT invent numbers. Every claim must reference a value present in the provided inputs. "
+     "Numbers in inputs are authoritative — quote them, do not re-estimate. "
+     "Be concrete, terse, and corridor-aware (C1_I95_NJ_BOS vs C2_NJ_PHL)."),
+    ("user",
+     "Data Quality report (deterministic — pulled from Appendix A reconciliation):\n{dq_report}\n\n"
+     "Per-corridor KPI comparison (planning window = Day0+Day1):\n{corridor_comparison}\n\n"
+     "Period-over-Period trend (early-history half vs late-history half):\n{pop_trend}\n\n"
+     "Return a markdown brief with these sections, in order:\n"
+     "1. **Headline KPIs** — one line per corridor with valid units, Tier-1 share, cold-chain share, exclusion rate.\n"
+     "2. **Data Quality Findings** — call out DQ-01..DQ-04 counts and any flagged samples; name the worst offenders.\n"
+     "3. **Trend Direction** — for each corridor, state whether valid volume, cold-chain load, and Tier-1 share rose, "
+     "fell, or held flat across the two history periods. Include the % delta.\n"
+     "4. **Corridor Comparison** — explicitly contrast C1 vs C2 on the planning window (which is heavier on cold-chain, "
+     "which has more excluded rows, which needs more temp-controlled trucks).\n"
+     "5. **Immediate Actions for Dispatch** — 3-5 bullets the PlannerAgent must respect when building the 48h plan."
+     )
+])
+
 PLANNER_PROMPT = ChatPromptTemplate.from_messages([
     ("system",
      "You are PlannerAgent. Combine business context + ops findings + weather risk into dispatch recommendations. "

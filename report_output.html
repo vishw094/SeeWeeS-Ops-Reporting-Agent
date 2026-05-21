@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dispatch Planning KPI & Risk Report</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; color: #222; }
+  h1, h2, h3 { color: #004080; }
+  ul { margin-top: 0; }
+  section { margin-bottom: 25px; }
+  .flag-true { color: #d9534f; font-weight: bold; }
+  .flag-false { color: #5cb85c; font-weight: bold; }
+  table { border-collapse: collapse; width: 100%; max-width: 600px; margin-top: 10px; }
+  th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; }
+  th { background-color: #f0f8ff; }
+</style>
+</head>
+<body>
+
+<h1>Dispatch Planning KPI & Risk Report</h1>
+
+<section>
+  <h2>1. Key Performance Indicators (KPIs)</h2>
+  <ul>
+    <li><strong>Excluded Invalid Rows:</strong> 20% of dataset excluded due to missing <code>unique_item_id</code>.</li>
+    <li><strong>Valid vs Excluded Shipments:</strong> 80% valid shipments proceed to dispatch; 20% excluded and logged with reason code <em>"Missing unique_item_id"</em>.</li>
+    <li><strong>Required Trucks:</strong> Planned based on valid shipments respecting truck capacity and packing constraints.</li>
+    <li><strong>SLA Risk Flags:</strong> No current SLA breach risks detected; monitoring ongoing.</li>
+    <li><strong>Weather Risk Summary:</strong> No severe weather risks detected (heavy rain, high wind, freezing risk all false).</li>
+    <li><strong>Applied Travel Buffers:</strong> Standard operational buffers applied; no additional buffers needed due to weather.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>2. Dispatch Plan Summary (Next 24-48h)</h2>
+  <ul>
+    <li>Exclude all rows missing <code>unique_item_id</code> from dispatch planning per SLA constraints; all exclusions logged with reason code.</li>
+    <li>Validate <code>item_id</code> and <code>dispatch_location</code> for consistency; no anomalies detected but continue monitoring.</li>
+    <li>No severe weather risk flags; no additional travel buffers beyond standard operational buffers required.</li>
+    <li>Dispatch trucks planned respecting capacity and packing constraints using valid shipments only.</li>
+    <li>Focus on improving data quality and item master data accuracy before dispatch.</li>
+    <li>Operations advised to proceed with valid rows; no weather-related delays expected.</li>
+    <li>Standard SLA monitoring to continue; escalate emerging risks promptly.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>3. Monitoring & Contingency Triggers</h2>
+  <h3>What to Monitor</h3>
+  <ul>
+    <li>Count and logging of excluded invalid rows (missing <code>unique_item_id</code>).</li>
+    <li>Ratio of valid vs excluded shipments to assess data quality impact.</li>
+    <li>SLA risk flags for early detection of potential breaches.</li>
+    <li>Weather risk updates for any worsening conditions.</li>
+    <li>Truck capacity utilization and packing efficiency.</li>
+    <li>Data quality improvements on <code>unique_item_id</code> completeness.</li>
+  </ul>
+  <h3>Contingency Triggers</h3>
+  <ul>
+    <li>If missing <code>unique_item_id</code> rate rises above 20%, consider halting dispatch for affected items until data quality restored.</li>
+    <li>If weather risk flags escalate to severe (heavy rain, high wind), apply additional travel buffers or delay dispatch.</li>
+    <li>If SLA risk flags indicate potential breaches, escalate for operational intervention immediately.</li>
+    <li>If item master data errors are detected, pause dispatch for affected items until corrected.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>4. Weather Risk Summary</h2>
+  <table>
+    <tbody>
+      <tr><th>Max Precipitation (mm/day)</th><td>0.0</td></tr>
+      <tr><th>Max Wind Gust (km/h)</th><td>35.6</td></tr>
+      <tr><th>Min Temperature (°C)</th><td>9.8</td></tr>
+      <tr><th>Heavy Rain Risk</th><td class="flag-false">False</td></tr>
+      <tr><th>High Wind Risk</th><td class="flag-false">False</td></tr>
+      <tr><th>Freezing Risk</th><td class="flag-false">False</td></tr>
+      <tr><th>Overall Weather Risk Score (0-3)</th><td>0</td></tr>
+    </tbody>
+  </table>
+  <p>No severe weather conditions detected; travel buffers remain at standard levels.</p>
+</section>
+
+<section>
+  <h2>5. Expected KPI Impacts</h2>
+  <ul>
+    <li>20% shipment exclusion reduces valid shipment count; potential SLA risk if excluded items are critical.</li>
+    <li>Accurate exclusion logging improves transparency and supports targeted data quality remediation.</li>
+    <li>No weather-related delays expected; travel buffers remain minimal, controlling costs.</li>
+    <li>Truck utilization may be slightly lower due to exclusions, prioritizing safety and SLA adherence.</li>
+    <li>Overall dispatch plan balances SLA compliance, safety, and cost efficiency under current conditions.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Audit Trail</h2>
+  <ul>
+    <li><strong>Audit Cycles Completed:</strong> 1</li>
+    <li><strong>Final Audit Result:</strong> PASSED</li>
+    <li><strong>Human Escalation Triggered:</strong> No</li>
+  </ul>
+</section>
+
+</body>
+</html>

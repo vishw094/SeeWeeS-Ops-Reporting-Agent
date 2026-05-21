@@ -2,7 +2,14 @@ from __future__ import annotations
 import json
 from typing import Dict, Any, List
 from langchain_openai import ChatOpenAI
-from prompts import PDF_CONTEXT_PROMPT, OPS_ANALYSIS_PROMPT, PLANNER_PROMPT, AUDIT_PROMPT, REPORT_PROMPT
+from prompts import (
+    PDF_CONTEXT_PROMPT,
+    OPS_ANALYSIS_PROMPT,
+    TREND_OPS_PROMPT,
+    PLANNER_PROMPT,
+    AUDIT_PROMPT,
+    REPORT_PROMPT,
+)
 
 llm = ChatOpenAI(
     model="gpt-4.1-mini",
@@ -18,6 +25,19 @@ def run_context_agent(snippets: str) -> str:
 def run_ops_agent(summary: Dict[str, Any], kpis: Dict[str, Any], anomalies_md: str) -> str:
     return llm.invoke(OPS_ANALYSIS_PROMPT.format_messages(
         summary=summary, kpis=kpis, anomalies_md=anomalies_md
+    )).content
+
+
+def run_trend_agent(
+    dq_report: Dict[str, Any],
+    corridor_comparison: Dict[str, Any],
+    pop_trend: Dict[str, Any],
+) -> str:
+    """Feature 3 — narrate deterministic corridor/PoP KPIs for the planner."""
+    return llm.invoke(TREND_OPS_PROMPT.format_messages(
+        dq_report=dq_report,
+        corridor_comparison=corridor_comparison,
+        pop_trend=pop_trend,
     )).content
 
 def run_planner_agent(
