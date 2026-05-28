@@ -9,13 +9,14 @@ from langgraph.graph import StateGraph, END
 from dotenv import load_dotenv
 
 from tools.pdf_tools import PdfRag, load_cached_business_context, save_cached_business_context
-from tools.weather_tools import get_weather_forecast, derive_dispatch_weather_risk
+from tools.weather_tools import get_all_corridors_weather, worst_corridor_risk
 from tools.email_tools import send_email_smtp
 from agents import (
     run_context_agent,
     run_trend_agent,
     run_planner_agent,
     run_audit_agent,
+    run_resource_planner_agent,
     run_report_agent,
 )
 
@@ -32,6 +33,7 @@ MAX_AUDIT_RETRIES = 3
 class AppState(TypedDict, total=False):
     pdf_path: str
     csv_path: str
+    resource_csv_path: str
 
     business_context: str
     rag_eval_results: Dict[str, Any]
@@ -41,12 +43,17 @@ class AppState(TypedDict, total=False):
     corridor_comparison: Dict[str, Any]
     pop_trend: Dict[str, Any]
     deep_dive_tables: Dict[str, Any]
-    appendix_text: str              # deterministic deep-dive tables, emailed as attachment
-    canonical_df_json: str          # serialized reconciled rows for downstream agents
-    ops_insights: str               # narrated by run_trend_agent
+    appendix_text: str
+    canonical_df_json: str
+    ops_insights: str
 
-    weather_forecast: Dict[str, Any]
-    weather_risk: Dict[str, Any]
+    # Feature 5 — multi-corridor weather + resource allocation
+    weather_risk_by_corridor: Dict[str, Any]
+    weather_risk: Dict[str, Any]          # worst-corridor risk — used by deterministic audit
+    resource_availability: Dict[str, Any]
+    resource_demand: Dict[str, Any]
+    resource_allocation: Dict[str, Any]
+    resource_insights: str                # narrated by run_resource_planner_agent
 
     planner_draft: Dict[str, Any]
     dispatch_plan: str
@@ -239,15 +246,88 @@ def node_dq_reconcile(state: AppState) -> AppState:
     }
 
 
-@_timed("weather")
-def node_weather(state: AppState) -> AppState:
-    lat = os.getenv("WEATHER_LAT", "40.7282")
-    lon = os.getenv("WEATHER_LON", "-74.0776")
-    tz = os.getenv("WEATHER_TZ", "America/New_York")
+@_timed("weather_multi_corridor")
+def node_weather_multi_corridor(state: AppState) -> AppState:
+    """Feature 5a — fetch per-waypoint weather for all corridors (9 waypoints total).
 
-    forecast = get_weather_forecast(lat, lon, tz)
-    risk = derive_dispatch_weather_risk(forecast)
-    return {"weather_forecast": forecast, "weather_risk": risk}
+    Derives a single worst-corridor ``weather_risk`` block for the deterministic
+    audit (which needs one risk_score_0_3), while storing the full per-corridor
+    detail in ``weather_risk_by_corridor`` for the planner and report.
+    """
+    tz = os.getenv("WEATHER_TZ", "America/New_York")
+    weather_by_corridor = get_all_corridors_weather(tz)
+    worst = worst_corridor_risk(weather_by_corridor)
+
+    for cid, cdata in weather_by_corridor.items():
+        n_wp = len(cdata.get("waypoint_detail", []))
+        print(
+            f"[Weather] {cid}: Day0={cdata['day0_risk_score']} "
+            f"Day1={cdata['day1_risk_score']} 48h={cdata['risk_48h']} "
+            f"buffer={cdata['travel_buffer_pct']}% ({n_wp} waypoints)"
+        )
+    print(f"[Weather] Worst-corridor risk_score={worst.get('risk_score_0_3', 0)}")
+
+    return {
+        "weather_risk_by_corridor": weather_by_corridor,
+        "weather_risk": worst,
+    }
+
+
+@_timed("resource_allocator")
+def node_resource_allocator(state: AppState) -> AppState:
+    """Feature 5b — load resource CSV, compute demand, run penalty-minimising allocation.
+
+    Requires both ``canonical_df_json`` (from node_dq_reconcile) and
+    ``weather_risk_by_corridor`` (from node_weather_multi_corridor) to be present,
+    so this node is the fan-in point of the parallel branches.
+    """
+    import pandas as pd
+    from tools.resource_tools import load_resource_availability, compute_demand, allocate_resources
+
+    resource_csv = state.get("resource_csv_path", "")
+    if not resource_csv:
+        print("[ResourceAllocator] resource_csv_path not set — skipping allocation.")
+        return {
+            "resource_availability": {},
+            "resource_demand": {},
+            "resource_allocation": {"total_penalty": 0, "total_unmet_units": 0, "by_corridor_day": {}},
+            "resource_insights": "Resource allocation skipped (no resource CSV provided).",
+        }
+
+    availability = load_resource_availability(resource_csv)
+
+    canonical_json = state.get("canonical_df_json", "[]")
+    reconciled_df  = pd.read_json(canonical_json, orient="records")
+
+    # Limit demand to the planning window (Day0, Day1) — matches the 48h resource CSV.
+    planning_days  = sorted(availability.keys())
+    demand         = compute_demand(reconciled_df, planning_days=planning_days)
+    allocation     = allocate_resources(demand, availability)
+
+    print(
+        f"[ResourceAllocator] total_penalty={allocation['total_penalty']} "
+        f"total_unmet={allocation['total_unmet_units']}"
+    )
+    for day, summary in allocation.get("summary_by_day", {}).items():
+        print(
+            f"  {day}: bottleneck={summary.get('bottleneck','?')} "
+            f"penalty={summary.get('day_total_penalty',0)} "
+            f"unmet={summary.get('day_unmet_units',0)}"
+        )
+
+    resource_insights = run_resource_planner_agent(
+        resource_availability=availability,
+        resource_demand=demand,
+        resource_allocation=allocation,
+        weather_by_corridor=state.get("weather_risk_by_corridor", {}),
+    )
+
+    return {
+        "resource_availability": availability,
+        "resource_demand":       demand,
+        "resource_allocation":   allocation,
+        "resource_insights":     resource_insights,
+    }
 
 
 def _expected_buffer_pct(risk_score: Any) -> int:
@@ -310,10 +390,20 @@ def apply_deterministic_audit_checks(
 @_timed("planner")
 def node_planner(state: AppState) -> AppState:
     violations = state.get("audit_violations", [])
+
+    # Merge trend + resource insights into a single ops_insights block
+    ops_insights = state.get("ops_insights", "")
+    resource_insights = state.get("resource_insights", "")
+    combined_insights = (
+        ops_insights + "\n\n--- Resource Allocation ---\n" + resource_insights
+        if resource_insights
+        else ops_insights
+    )
+
     draft = run_planner_agent(
         business_context=state.get("business_context", ""),
-        ops_insights=state.get("ops_insights", ""),
-        weather_risk=state.get("weather_risk", {}),
+        ops_insights=combined_insights,
+        weather_risk=state.get("weather_risk_by_corridor", state.get("weather_risk", {})),
         audit_violations=violations if violations else None,
     )
     return {
@@ -405,11 +495,20 @@ def node_report(state: AppState) -> AppState:
         "by_corridor_history": comparison.get("history", {}),
         "pop_overall_delta": state.get("pop_trend", {}).get("overall", {}).get("delta", {}),
     }
+    allocation = state.get("resource_allocation", {})
+    alloc_summary = (
+        f"Total penalty={allocation.get('total_penalty', 'N/A')} "
+        f"Unmet units={allocation.get('total_unmet_units', 'N/A')}"
+        if allocation
+        else "Resource allocation not run."
+    )
+
     anomaly_highlights = (
         f"DQ-01 missing uid: {dq_report.get('dq01_missing_uid', 0)} | "
         f"DQ-02 invalid id: {dq_report.get('dq02_invalid_id', 0)} | "
         f"DQ-03 name mismatch: {dq_report.get('dq03_name_mismatch', 0)} | "
-        f"DQ-04 duplicate uid: {dq_report.get('dq04_duplicate_uid', 0)}"
+        f"DQ-04 duplicate uid: {dq_report.get('dq04_duplicate_uid', 0)} | "
+        f"Resource: {alloc_summary}"
     )
     excluded_sample = dq_report.get("excluded_sample", [])
     if excluded_sample:
@@ -424,10 +523,18 @@ def node_report(state: AppState) -> AppState:
         business_context=state.get("business_context", ""),
         kpis=kpis_for_report,
         anomaly_highlights=anomaly_highlights,
-        weather_risk=state.get("weather_risk", {}),
+        weather_risk=state.get("weather_risk_by_corridor", state.get("weather_risk", {})),
         dispatch_plan=state.get("dispatch_plan", ""),
         audit_trail=audit_trail,
     )
+
+    # Strip markdown code fences the LLM sometimes wraps around HTML output
+    html = html.strip()
+    if html.startswith("```"):
+        html = html.split("\n", 1)[-1]
+    if html.endswith("```"):
+        html = html.rsplit("```", 1)[0]
+    html = html.strip()
 
     deep = state.get("deep_dive_tables", {})
     appendix_text = render_deep_dive_text(deep)
@@ -486,19 +593,27 @@ def route_audit(state: AppState) -> str:
 def build_graph():
     g = StateGraph(AppState)
 
-    g.add_node("pdf_context", node_pdf_context)
-    g.add_node("dq_reconcile", node_dq_reconcile)
-    g.add_node("weather", node_weather)
-    g.add_node("planner", node_planner)
-    g.add_node("audit", node_audit)
-    g.add_node("human_checkpoint", node_human_checkpoint)
-    g.add_node("report", node_report)
-    g.add_node("email", node_email)
+    g.add_node("pdf_context",              node_pdf_context)
+    g.add_node("dq_reconcile",             node_dq_reconcile)
+    g.add_node("weather_multi_corridor",   node_weather_multi_corridor)
+    g.add_node("resource_allocator",       node_resource_allocator)
+    g.add_node("planner",                  node_planner)
+    g.add_node("audit",                    node_audit)
+    g.add_node("human_checkpoint",         node_human_checkpoint)
+    g.add_node("report",                   node_report)
+    g.add_node("email",                    node_email)
 
     g.set_entry_point("pdf_context")
+
+    # Parallel fan-out: DQ reconciliation and multi-corridor weather run concurrently.
     g.add_edge("pdf_context", "dq_reconcile")
-    g.add_edge("dq_reconcile", "weather")
-    g.add_edge("weather", "planner")
+    g.add_edge("pdf_context", "weather_multi_corridor")
+
+    # Fan-in: resource_allocator waits for both branches to complete.
+    g.add_edge("dq_reconcile",           "resource_allocator")
+    g.add_edge("weather_multi_corridor", "resource_allocator")
+
+    g.add_edge("resource_allocator", "planner")
     g.add_edge("planner", "audit")
     g.add_conditional_edges(
         "audit",

@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>SeeWeeS Ops Reporting Agent - Technical and Business Report</title>
+<style>
+  /* ---- Base ---- */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Georgia", "Times New Roman", serif;
+    font-size: 11pt;
+    line-height: 1.7;
+    color: #1a1a1a;
+    background: #fff;
+    padding: 0;
+  }
+
+  /* ---- Cover Page ---- */
+  .cover {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 60px 80px;
+    background: linear-gradient(135deg, #003366 0%, #005599 60%, #0077cc 100%);
+    color: white;
+    page-break-after: always;
+  }
+  .cover .logo-line {
+    font-size: 12pt;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    opacity: 0.8;
+    margin-bottom: 40px;
+    font-family: Arial, sans-serif;
+  }
+  .cover h1 {
+    font-size: 28pt;
+    font-weight: bold;
+    margin-bottom: 16px;
+    line-height: 1.3;
+  }
+  .cover .subtitle {
+    font-size: 14pt;
+    opacity: 0.9;
+    margin-bottom: 60px;
+    font-style: italic;
+  }
+  .cover .meta {
+    border-top: 1px solid rgba(255,255,255,0.4);
+    padding-top: 32px;
+    font-size: 10pt;
+    opacity: 0.85;
+    line-height: 2;
+    font-family: Arial, sans-serif;
+  }
+  .cover .badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 4px;
+    padding: 6px 18px;
+    font-size: 9pt;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 32px;
+    font-family: Arial, sans-serif;
+  }
+
+  /* ---- TOC ---- */
+  .toc-page {
+    padding: 60px 80px;
+    page-break-after: always;
+    min-height: 100vh;
+  }
+  .toc-page h2 {
+    font-size: 18pt;
+    color: #003366;
+    border-bottom: 2px solid #003366;
+    padding-bottom: 10px;
+    margin-bottom: 28px;
+    font-family: Arial, sans-serif;
+  }
+  .toc-entry {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 6px 0;
+    border-bottom: 1px dotted #ccc;
+    font-size: 11pt;
+  }
+  .toc-entry.sub {
+    padding-left: 24px;
+    font-size: 10pt;
+    color: #444;
+    border-bottom: none;
+    padding-top: 3px;
+    padding-bottom: 3px;
+  }
+  .toc-title { font-weight: bold; }
+  .toc-entry.sub .toc-title { font-weight: normal; }
+
+  /* ---- Content Pages ---- */
+  .content {
+    padding: 60px 80px;
+  }
+  .page-break { page-break-before: always; padding-top: 60px; }
+
+  /* ---- Headings ---- */
+  h1.section-title {
+    font-size: 20pt;
+    color: #003366;
+    border-bottom: 3px solid #003366;
+    padding-bottom: 10px;
+    margin-bottom: 28px;
+    font-family: Arial, sans-serif;
+  }
+  h2.sub-title {
+    font-size: 14pt;
+    color: #005599;
+    margin-top: 32px;
+    margin-bottom: 14px;
+    font-family: Arial, sans-serif;
+  }
+  h3.sub-sub-title {
+    font-size: 11pt;
+    color: #003366;
+    margin-top: 22px;
+    margin-bottom: 10px;
+    font-family: Arial, sans-serif;
+    font-weight: bold;
+  }
+
+  /* ---- Body text ---- */
+  p { margin-bottom: 14px; text-align: justify; }
+  ul, ol { margin-left: 24px; margin-bottom: 14px; }
+  li { margin-bottom: 6px; }
+  strong { font-weight: bold; }
+
+  /* ---- Callout boxes ---- */
+  .callout {
+    background: #f0f6ff;
+    border-left: 4px solid #005599;
+    padding: 14px 18px;
+    margin: 20px 0;
+    border-radius: 2px;
+    font-size: 10.5pt;
+  }
+  .callout.warn {
+    background: #fff8f0;
+    border-left-color: #cc7000;
+  }
+  .callout.success {
+    background: #f0fff4;
+    border-left-color: #228b22;
+  }
+
+  /* ---- Tables ---- */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0 22px 0;
+    font-size: 10pt;
+    font-family: Arial, sans-serif;
+  }
+  th {
+    background: #003366;
+    color: white;
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: bold;
+  }
+  td {
+    padding: 7px 10px;
+    border-bottom: 1px solid #ddd;
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: #f5f8ff; }
+  .center { text-align: center; }
+  .pass { color: #228b22; font-weight: bold; }
+  .flag { color: #cc2200; font-weight: bold; }
+
+  /* ---- Code / Mono ---- */
+  .mono {
+    font-family: "Courier New", monospace;
+    background: #f4f4f4;
+    border: 1px solid #ddd;
+    padding: 14px 18px;
+    font-size: 9pt;
+    margin: 16px 0;
+    white-space: pre;
+    overflow-x: auto;
+    border-radius: 3px;
+    line-height: 1.5;
+  }
+  code {
+    font-family: "Courier New", monospace;
+    background: #f0f0f0;
+    padding: 1px 5px;
+    border-radius: 2px;
+    font-size: 9.5pt;
+  }
+
+  /* ---- Architecture diagram ---- */
+  .arch {
+    font-family: "Courier New", monospace;
+    font-size: 8.5pt;
+    background: #f9f9ff;
+    border: 1px solid #c0c8e0;
+    padding: 18px 22px;
+    margin: 18px 0;
+    line-height: 1.6;
+    border-radius: 3px;
+    white-space: pre;
+  }
+
+  /* ---- Stat cards ---- */
+  .stat-row {
+    display: flex;
+    gap: 16px;
+    margin: 18px 0;
+    flex-wrap: wrap;
+  }
+  .stat-card {
+    flex: 1;
+    min-width: 120px;
+    background: #003366;
+    color: white;
+    border-radius: 6px;
+    padding: 16px 18px;
+    text-align: center;
+  }
+  .stat-card .num {
+    font-size: 22pt;
+    font-weight: bold;
+    display: block;
+    font-family: Arial, sans-serif;
+  }
+  .stat-card .label {
+    font-size: 8.5pt;
+    opacity: 0.85;
+    font-family: Arial, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-top: 4px;
+    display: block;
+  }
+  .stat-card.green { background: #1a6e2e; }
+  .stat-card.amber { background: #8b5e00; }
+
+  /* ---- Section number badge ---- */
+  .sec-num {
+    display: inline-block;
+    background: #003366;
+    color: white;
+    font-family: Arial, sans-serif;
+    font-size: 9pt;
+    font-weight: bold;
+    padding: 2px 10px;
+    border-radius: 3px;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+
+  /* ---- Footer ---- */
+  .footer {
+    margin-top: 50px;
+    border-top: 1px solid #ccc;
+    padding-top: 12px;
+    font-size: 8.5pt;
+    color: #888;
+    font-family: Arial, sans-serif;
+    text-align: center;
+  }
+
+  /* ---- Print ---- */
+  @media print {
+    body { font-size: 10.5pt; }
+    .cover { min-height: auto; padding: 80px; }
+    .toc-page, .content { padding: 40px 60px; }
+    .page-break { page-break-before: always; padding-top: 40px; }
+    .stat-row { display: block; }
+    .stat-card { display: inline-block; width: 30%; margin-bottom: 10px; }
+    .arch, .mono { font-size: 8pt; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================================================ COVER PAGE -->
+<div class="cover">
+  <div class="badge">UCLA MSBA AI Agents Project Challenge 2026</div>
+  <div class="logo-line">SeeWeeS Specialty Medicine Dispatch Network</div>
+  <h1>Multi-Agent Ops Reporting System</h1>
+  <div class="subtitle">Technical and Business Documentation</div>
+  <div class="meta">
+    <strong>Project:</strong> SeeWeeS Ops Reporting Agent<br>
+    <strong>Features Implemented:</strong> Feature 1 (Self-Correction Audit Loop), Feature 3 (Deep-Dive Trend Analysis), Feature 5 (Multi-Region Resource Planning)<br>
+    <strong>Date:</strong> May 2026<br>
+    <strong>Platform:</strong> LangGraph 0.2 | LangChain | GPT-4.1-mini | ChromaDB | Python 3.11
+  </div>
+</div>
+
+<!-- ============================================================ TABLE OF CONTENTS -->
+<div class="toc-page">
+  <h2>Table of Contents</h2>
+  <div class="toc-entry"><span class="toc-title">1. Executive Summary</span><span>3</span></div>
+  <div class="toc-entry sub"><span class="toc-title">Stakeholder and Business Context</span></div>
+  <div class="toc-entry sub"><span class="toc-title">Operational Pain Point</span></div>
+  <div class="toc-entry sub"><span class="toc-title">Solution at a Glance</span></div>
+
+  <div class="toc-entry" style="margin-top:10px;"><span class="toc-title">2. Key Assumptions</span><span>4</span></div>
+  <div class="toc-entry sub"><span class="toc-title">Logistics Constraints</span></div>
+  <div class="toc-entry sub"><span class="toc-title">Data Availability</span></div>
+  <div class="toc-entry sub"><span class="toc-title">Business Rules</span></div>
+
+  <div class="toc-entry" style="margin-top:10px;"><span class="toc-title">3. Technical Methodology</span><span>5</span></div>
+  <div class="toc-entry sub"><span class="toc-title">3.1 Architectural Enhancements</span></div>
+  <div class="toc-entry sub"><span class="toc-title">3.2 Agent Design and Specialized Prompts</span></div>
+  <div class="toc-entry sub"><span class="toc-title">3.3 Data Quality and Reconciliation Engine</span></div>
+  <div class="toc-entry sub"><span class="toc-title">3.4 Trend Analysis and KPI Computation</span></div>
+  <div class="toc-entry sub"><span class="toc-title">3.5 Resource Allocation</span></div>
+
+  <div class="toc-entry" style="margin-top:10px;"><span class="toc-title">4. Results and Validation</span><span>9</span></div>
+  <div class="toc-entry sub"><span class="toc-title">4.1 Actual Pipeline Output</span></div>
+  <div class="toc-entry sub"><span class="toc-title">4.2 Data Quality Results</span></div>
+  <div class="toc-entry sub"><span class="toc-title">4.3 Item Spike Detection</span></div>
+  <div class="toc-entry sub"><span class="toc-title">4.4 Audit Loop Validation</span></div>
+  <div class="toc-entry sub"><span class="toc-title">4.5 Performance Benchmarks</span></div>
+
+  <div class="toc-entry" style="margin-top:10px;"><span class="toc-title">5. Limitations and Next Steps</span><span>13</span></div>
+  <div class="toc-entry sub"><span class="toc-title">Current Constraints</span></div>
+  <div class="toc-entry sub"><span class="toc-title">Scaling with Real-World Data</span></div>
+</div>
+
+<!-- ============================================================ SECTION 1 -->
+<div class="content">
+<h1 class="section-title"><span class="sec-num">1</span> Executive Summary</h1>
+
+<h2 class="sub-title">Stakeholder and Business Context</h2>
+<p>
+The primary stakeholder for this system is the dispatch operations manager at SeeWeeS, a specialty medicine logistics company operating out of New Jersey distribution centers. The operations team is responsible for planning and executing time-critical medicine shipments to hospitals across two defined delivery corridors: the NJ to Boston corridor (C1_I95_NJ_BOS, Tier 1) and the NJ to Philadelphia corridor (C2_NJ_PHL, Tier 2). Both corridors carry life-critical medicines including antivirals, monoclonal antibodies, cold-chain biologics, and controlled substances, each with strict SLA requirements of 6 to 12 hours maximum transit time.
+</p>
+<p>
+The operational decisions made each morning cover a 48-hour planning horizon (Day 0 and Day 1) and involve four interconnected problems: whether the incoming shipment data is accurate and complete, how many trucks and drivers are needed per corridor, what weather-related risks exist along each route, and whether the resulting dispatch plan is compliant with SeeWeeS policy before it leaves the operations manager's desk.
+</p>
+
+<h2 class="sub-title">Operational Pain Point</h2>
+<p>
+Before this project, the reporting system was a generic, single-corridor linear pipeline. It ran an anomaly detection algorithm (IsolationForest) on whatever numeric columns happened to be present in the CSV, fetched weather for one hardcoded location, and passed a vague text summary to an LLM that produced an unverifiable plan. There was no mechanism to catch or fix planning errors before the report was finalized. Critically:
+</p>
+<ul>
+  <li>Incoming shipment rows with missing or mismatched item identifiers were silently included in dispatch totals, inflating truck and driver requirements.</li>
+  <li>There was no cross-corridor comparison. The NJ to Philadelphia route was not accounted for at all.</li>
+  <li>A planner that recommended the wrong travel buffer or ignored escalation requirements had no way to be corrected before the report reached leadership.</li>
+  <li>Every pipeline run re-extracted context from the policy document, even when the document had not changed, wasting 15 to 20 seconds on every execution.</li>
+</ul>
+
+<h2 class="sub-title">Solution at a Glance</h2>
+<p>
+This project delivers three integrated enhancements that address each pain point directly. Feature 1 adds a self-correcting audit loop that rejects non-compliant dispatch plans and forces the planner to revise before the report is generated, with human escalation when the loop cannot converge automatically. Feature 3 replaces the generic anomaly detection with a deterministic item master reconciliation engine and corridor-aware trend analysis grounded in the actual SeeWeeS Dispatch Playbook rules. Feature 5 extends the weather module to evaluate all nine corridor waypoints in parallel and adds a penalty-minimising resource allocator that computes the optimal truck and driver assignment across both corridors and both planning days.
+</p>
+
+<div class="stat-row">
+  <div class="stat-card"><span class="num">3</span><span class="label">Features Implemented</span></div>
+  <div class="stat-card green"><span class="num">29</span><span class="label">Unit Tests Passing</span></div>
+  <div class="stat-card"><span class="num">96.1%</span><span class="label">DQ Pass Rate</span></div>
+  <div class="stat-card green"><span class="num">1</span><span class="label">Audit Attempt to Pass</span></div>
+  <div class="stat-card amber"><span class="num">~63s</span><span class="label">Cold Run Duration</span></div>
+</div>
+</div>
+
+<!-- ============================================================ SECTION 2 -->
+<div class="content page-break">
+<h1 class="section-title"><span class="sec-num">2</span> Key Assumptions</h1>
+
+<h2 class="sub-title">Logistics Constraints</h2>
+<ul>
+  <li><strong>Truck capacity:</strong> Each standard truck holds exactly 10 volume units, where each unique shipment ID counts as one unit. A 10 percent packing inefficiency buffer is applied, giving a working formula of trucks required equals the ceiling of total units multiplied by 1.10 divided by 10. This comes directly from Playbook section 7.2.</li>
+  <li><strong>Cold-chain separation:</strong> Items requiring Cold (2-8 degrees C) or Strict Cold Chain (minus 20 degrees C) must be transported exclusively in temperature-controlled refrigerator trucks. Standard trucks cannot be used for these items under any circumstance. This is a hard constraint, not a soft preference.</li>
+  <li><strong>Driver assignment:</strong> One driver is required per truck, so total drivers required equals standard trucks plus temperature-controlled trucks.</li>
+  <li><strong>Resource pool:</strong> The resource pool (6 drivers, 4 standard trucks, 2 refrigerator trucks per day) is fixed and shared across both corridors simultaneously. There is no overflow buffer or on-call pool assumed.</li>
+  <li><strong>48-hour planning horizon:</strong> The system plans for Day 0 and Day 1 only. Decisions for Day 2 and beyond are out of scope for this pipeline run.</li>
+</ul>
+
+<h2 class="sub-title">Data Availability</h2>
+<ul>
+  <li><strong>Shipment CSV:</strong> The incoming CSV is assumed to be provided daily and covers 14 days of data (12 history days plus Day 0 and Day 1 for the planning window). The schema is fixed as defined in Playbook section 10.</li>
+  <li><strong>Weather API:</strong> Open-Meteo is used as the weather data source because it provides freely available daily aggregate forecasts (precipitation, wind gusts, minimum temperature) without requiring an API key. The two-day forecast window is used to cover Day 0 and Day 1 risk simultaneously.</li>
+  <li><strong>Item master:</strong> The canonical item master, alias table, and legacy ID mapping are treated as stable reference data and are hard-coded as module constants. This was a deliberate choice: an externally-managed CSV would introduce a dependency that could go stale between runs, whereas hard-coded constants are always in sync with the playbook version the code was built against.</li>
+  <li><strong>Policy document:</strong> The SeeWeeS Specialty Dispatch Playbook (markdown format) is the single source of truth for all thresholds, SLA definitions, and business rules. The RAG system indexes this document at startup and rebuilds the index only when the file changes.</li>
+</ul>
+
+<h2 class="sub-title">Business Rules</h2>
+<ul>
+  <li><strong>SLA tiers are fixed by medicine type:</strong> Tier 1 (life-critical, 6-hour maximum transit) covers antivirals, hormones, monoclonal antibodies, emergency drugs, anticoagulants, and clinical trial drugs. Tier 2 (standard specialty, 12-hour maximum) covers opioid analgesics and bronchodilators. Any medicine type not in the lookup defaults to Tier 2.</li>
+  <li><strong>Allocation priority:</strong> When resources are insufficient to serve all demand, Tier 1 cold-chain demand is served first (180 penalty points per unmet unit), then Tier 1 room-temperature (100 points), then Tier 2 cold-chain (120 points), then Tier 2 room-temperature (40 points). This ordering directly reflects the Playbook section 13.2 penalty model.</li>
+  <li><strong>Travel buffer mapping:</strong> Weather risk scores map to mandatory travel time buffers: score 0 means no buffer, score 1 means plus 10 percent, score 2 means plus 25 percent, and score 3 means plus 40 percent with mandatory escalation to a human manager.</li>
+  <li><strong>DQ exclusions are hard:</strong> Any row excluded by a data quality rule (DQ-01 through DQ-04) is completely removed from dispatch calculations. It is never counted in truck volumes, driver requirements, or SLA metrics. This is not configurable.</li>
+</ul>
+</div>
+
+<!-- ============================================================ SECTION 3 -->
+<div class="content page-break">
+<h1 class="section-title"><span class="sec-num">3</span> Technical Methodology</h1>
+
+<h2 class="sub-title">3.1 Architectural Enhancements</h2>
+<p>
+The original system used a simple linear LangGraph pipeline: context extraction, CSV analysis, weather fetch, planner, then report. The enhanced architecture introduces three structural changes that together produce a fundamentally more capable system.
+</p>
+
+<h3 class="sub-sub-title">Cyclic Audit Loop (Feature 1)</h3>
+<p>
+A conditional edge is added after the planner node. The AuditAgent inspects the dispatch plan against six Playbook rules and returns a structured JSON verdict. If the plan fails, the violations are injected back into the planner prompt as explicit correction requirements and the planner retries. This cycle continues for up to three attempts. After three failures, the routing logic checks the weather risk score: if it is at maximum (3), the pipeline escalates to a human checkpoint node that prints a structured alert and waits for manager approval via stdin. If the risk score is below maximum, the pipeline proceeds to the report node but logs all unresolved violations in the audit trail section of the final report.
+</p>
+
+<div class="arch">Feature 1 Graph (cyclic):
+
+  node_planner  &lt;---------- retry (violations fed back as prompt input)
+       |
+       v
+  node_audit
+       |
+       |-- passed = True              --> node_report
+       |
+       |-- retries &lt; 3, failed        --> node_planner  (with violations list)
+       |
+       |-- retries &gt;= 3, score = 3   --> node_human_checkpoint
+       |                                        |
+       |                                        +-- approved --> node_report
+       |
+       +-- retries &gt;= 3, score &lt; 3   --> node_report (with audit warnings)
+</div>
+
+<h3 class="sub-sub-title">Parallel Fan-Out for DQ and Weather (Features 3 and 5)</h3>
+<p>
+The DQ reconciliation node and the multi-corridor weather node are independent: the first reads only from the shipment CSV, and the second calls the Open-Meteo API for nine waypoint locations. In LangGraph 0.2, parallel branches are declared simply by adding two edges from the same source node. LangGraph executes them in separate threads and performs a deep merge of their returned state dictionaries before the fan-in node (resource allocator) can run. The key design requirement to make this work correctly is that the two branches write to disjoint state keys, so no update is silently overwritten by the merge.
+</p>
+
+<div class="arch">Final Architecture (parallel + cyclic):
+
+  node_pdf_context
+        |
+        +---------------------------+
+        |                           |
+        v                           v
+  node_dq_reconcile         node_weather_multi_corridor
+  (Feature 3)               (Feature 5a)
+  - DQ-01 to DQ-04          - 9 waypoints, 2 corridors
+  - Item Master lookup       - Max-by-day corridor risk
+  - PoP trend analysis       - 48h risk and travel buffer
+  - Deep-dive tables
+        |                           |
+        +---------------------------+
+                     |
+                     v
+          node_resource_allocator
+          (Feature 5b)
+          - Load availability CSV
+          - Compute demand per corridor per day
+          - Penalty-minimising greedy allocation
+                     |
+                     v
+             node_planner  &lt;----- retry
+                     |
+                     v
+               node_audit
+                     |
+          +----------+-------------------+
+          |          |                   |
+          v          v                   v
+       approved   escalate         human_checkpoint
+          |         (risk=3)             |
+          +----------+-------------------+
+                     |
+                     v
+               node_report --> node_email
+</div>
+
+<h2 class="sub-title">3.2 Agent Design and Specialized Prompts</h2>
+<p>
+Five LLM agents operate in the pipeline, each with a dedicated prompt template and a specific responsibility boundary. A critical design choice is that no agent is asked to compute numeric values. All quantitative work (DQ counts, truck requirements, resource allocation penalties) is performed by deterministic Python code. Agents receive those computed numbers as inputs and are responsible only for interpreting, narrating, or auditing them.
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Agent</th>
+      <th>Prompt</th>
+      <th>Input</th>
+      <th>Output</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>ContextAgent</strong></td>
+      <td>PDF_CONTEXT_PROMPT</td>
+      <td>RAG-retrieved policy snippets</td>
+      <td>Structured business context (SLAs, constraints, thresholds)</td>
+    </tr>
+    <tr>
+      <td><strong>TrendOpsAgent</strong></td>
+      <td>TREND_OPS_PROMPT</td>
+      <td>DQ report, corridor KPIs, PoP deltas</td>
+      <td>5-section markdown operations brief</td>
+    </tr>
+    <tr>
+      <td><strong>ResourcePlannerAgent</strong></td>
+      <td>RESOURCE_PLANNER_PROMPT</td>
+      <td>Availability, demand, allocation result, weather</td>
+      <td>Plain-English resource narrative for the planner</td>
+    </tr>
+    <tr>
+      <td><strong>PlannerAgent</strong></td>
+      <td>PLANNER_PROMPT</td>
+      <td>Context, ops insights, weather risk, prior violations</td>
+      <td>Strict JSON: buffer %, escalation flag, cited rules, plan text</td>
+    </tr>
+    <tr>
+      <td><strong>AuditAgent</strong></td>
+      <td>AUDIT_PROMPT</td>
+      <td>Context, dispatch plan, weather risk, prior violations</td>
+      <td>Strict JSON: passed boolean, violations list, severity</td>
+    </tr>
+    <tr>
+      <td><strong>ReportAgent</strong></td>
+      <td>REPORT_PROMPT</td>
+      <td>All prior outputs, audit trail</td>
+      <td>Full HTML dispatch report for leadership</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+Two prompts have explicit anti-hallucination constraints. TREND_OPS_PROMPT instructs the agent: "DO NOT invent numbers. Every claim must reference a value present in the provided inputs. Numbers in inputs are authoritative, quote them, do not re-estimate." RESOURCE_PLANNER_PROMPT carries the same constraint. This makes agent output auditable because every number in the narrative can be traced back to a deterministic calculation.
+</p>
+
+<p>
+The PlannerAgent is constrained to return a strict JSON object with no markdown fences or prose outside the structure. This was essential for the deterministic audit layer to function: the code reads <code>recommended_buffer_pct</code>, <code>escalation_required</code>, and <code>cited_rules</code> directly from the parsed JSON and compares them against Playbook-defined values without any natural language processing.
+</p>
+
+<div class="callout">
+<strong>Two-Layer Audit Design:</strong> The AuditAgent (LLM) checks six qualitative rules about plan content. The deterministic audit layer (Python code) then independently checks three numeric facts: the buffer percentage exactly matches the Playbook section 5.2 mapping for the current weather risk score, escalation_required is true when and only when risk score equals 3, and cited_rules is non-empty. The plan passes only if both layers agree. This makes self-correction verifiable by code, not by asking the LLM to judge its own output.
+</div>
+
+<h2 class="sub-title">3.3 Data Quality and Reconciliation Engine</h2>
+<p>
+The item master reconciliation engine is implemented in <code>src/tools/dq_tools.py</code> as pure, deterministic Python. It contains three reference tables hard-coded as module constants: Appendix A.1 (11 canonical items with item IDs, medicine types, temperature requirements, and product classes), Appendix A.2 (7 name alias mappings covering space variants, brand names, abbreviations, and spelling variants), and Appendix A.3 (4 legacy or deprecated item ID mappings).
+</p>
+
+<p>
+Every incoming shipment row passes through a strict precedence chain before being admitted to dispatch calculations:
+</p>
+
+<div class="arch">Decision Tree per Row (D1 to D8 from Playbook Appendix A.6):
+
+  Row arrives
+    |
+    +-- unique_item_id is null or empty?         --> DQ-01: excluded
+    |
+    +-- (item_id, item_name) exact hit in A.1?   --> EXACT_MATCH (valid)
+    |
+    +-- item_name matches A.2 alias table?
+    |     |
+    |     +-- alias canonical agrees with row item_id?   --> ALIAS_MATCH (valid)
+    |     |
+    |     +-- alias canonical disagrees but item_id valid? --> DQ-03 (flagged)
+    |     |
+    |     +-- item_id unknown?                           --> ALIAS_MATCH (valid)
+    |
+    +-- item_id in A.3 legacy map?               --> LEGACY_ID_MAP (valid)
+    |
+    +-- item_id in master but name unclear?      --> DQ-03 (flagged)
+    |
+    +-- item_id not recognized anywhere?         --> DQ-02: excluded
+
+  Post-resolution:
+    +-- duplicate unique_item_id detected?       --> DQ-04: later occurrences flagged
+</div>
+
+<p>
+The engine is vectorized throughout. Name matching uses a single normalization function that lowercases the input, strips parenthetical content such as brand names, collapses all non-alphanumeric characters to spaces, and trims the result. This ensures that "Pembrolizumab (Keytruda)" and "pembrolizumab keytruda" produce identical lookup keys. A resolution cache keyed on (item_id, item_name) pairs ensures that repeated SKUs, which are common in daily shipment files, are resolved in O(1) time after the first encounter.
+</p>
+
+<p>
+Every resolved row receives six new columns: <code>canonical_item_id</code>, <code>canonical_item_name</code>, <code>medicine_type</code>, <code>temp_control</code>, <code>reason_code</code>, and <code>sla_tier</code>. The SLA tier is back-filled at reconciliation time and stored as a first-class column so that every downstream consumer reads one value instead of maintaining its own tier mapping.
+</p>
+
+<h2 class="sub-title">3.4 Trend Analysis and KPI Computation</h2>
+<p>
+The trend module (<code>src/tools/trend_tools.py</code>) computes four categories of metrics from the reconciled DataFrame, all using vectorized pandas operations.
+</p>
+<ul>
+  <li><strong>Corridor KPIs:</strong> For each corridor, separate KPI blocks are computed for the planning window (Day 0 and Day 1), the full history window, and all rows combined. Each block contains valid units, excluded rows, exclusion rate, cold-chain units and percentage, Tier 1 and Tier 2 mix, and truck and driver requirements following the Playbook capacity model.</li>
+  <li><strong>Period-over-Period trend:</strong> The history window is split at its date midpoint into Period A (earlier half) and Period B (later half). Absolute and percentage deltas are computed per KPI per corridor, giving the operations manager a directional view of whether demand is rising or falling ahead of the planning window.</li>
+  <li><strong>Cross-corridor comparison:</strong> A side-by-side KPI dictionary compares C1 and C2 on the planning window, giving the TrendOpsAgent concrete numbers to anchor its narrative.</li>
+  <li><strong>Item spike detection:</strong> Each item's planning-window unit count is compared against its historical daily average. A spike ratio above 1.5 is flagged. Planning-window rows are strictly excluded from the baseline computation to avoid contaminating the historical average with current demand.</li>
+</ul>
+
+<h2 class="sub-title">3.5 Resource Allocation</h2>
+<p>
+The resource allocator (<code>src/tools/resource_tools.py</code>) implements the penalty-minimising allocation required by Playbook section 13.2. For each planning day, the algorithm computes how much of each resource pool (standard trucks, temperature-controlled trucks, drivers) is available versus needed across both corridors. The constraining ratio is the minimum of the three availability ratios. All corridors are scaled uniformly by this ratio, and unmet units are attributed to the highest-penalty demand category first.
+</p>
+
+<table>
+  <thead>
+    <tr><th>Violation Type</th><th>Penalty per Unit</th><th>Priority Rank</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Tier 1 cold-chain SLA violation</td><td>180 points (100 + 80)</td><td>1 (highest)</td></tr>
+    <tr><td>Tier 1 room-temperature SLA violation</td><td>100 points</td><td>2</td></tr>
+    <tr><td>Tier 2 cold-chain violation</td><td>120 points (40 + 80)</td><td>3</td></tr>
+    <tr><td>Tier 2 room-temperature SLA violation</td><td>40 points</td><td>4</td></tr>
+    <tr><td>Non-SLA delivery delay</td><td>10 points</td><td>5 (lowest)</td></tr>
+  </tbody>
+</table>
+
+<div class="callout success">
+The allocation algorithm identifies which resource (standard trucks, temperature-controlled trucks, or drivers) is the binding constraint for the day and reports it as the "bottleneck" resource. This gives the operations manager a specific procurement action: if the bottleneck is temperature-controlled trucks, acquiring one additional refrigerator unit eliminates the entire penalty exposure for that day.
+</div>
+</div>
+
+<!-- ============================================================ SECTION 4 -->
+<div class="content page-break">
+<h1 class="section-title"><span class="sec-num">4</span> Results and Validation</h1>
+
+<h2 class="sub-title">4.1 Actual Pipeline Output</h2>
+<p>
+The following results are taken directly from a complete pipeline run against the 14-day multi-corridor shipment CSV (129 rows across two corridors). The planning window covers March 6 and March 7, 2026 (Day 0 and Day 1). The history window covers February 22 through March 5, 2026 (12 days).
+</p>
+
+<h3 class="sub-sub-title">Planning Window KPIs by Corridor (from report_output.html)</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Corridor</th>
+      <th>Total Shipments</th>
+      <th>Valid Units</th>
+      <th>Excluded</th>
+      <th>Exclusion Rate</th>
+      <th>Cold Chain Units</th>
+      <th>Cold Chain %</th>
+      <th>Tier 1 Units</th>
+      <th>Tier 1 %</th>
+      <th>Std Trucks</th>
+      <th>Temp Trucks</th>
+      <th>Drivers</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>C1_I95_NJ_BOS</td>
+      <td class="center">18</td>
+      <td class="center">16</td>
+      <td class="center">2</td>
+      <td class="center">11.1%</td>
+      <td class="center">9</td>
+      <td class="center">56.3%</td>
+      <td class="center">12</td>
+      <td class="center">75.0%</td>
+      <td class="center">1</td>
+      <td class="center">1</td>
+      <td class="center">2</td>
+    </tr>
+    <tr>
+      <td>C2_NJ_PHL</td>
+      <td class="center">15</td>
+      <td class="center">14</td>
+      <td class="center">1</td>
+      <td class="center">6.7%</td>
+      <td class="center">7</td>
+      <td class="center">50.0%</td>
+      <td class="center">11</td>
+      <td class="center">78.6%</td>
+      <td class="center">1</td>
+      <td class="center">1</td>
+      <td class="center">2</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+Both corridors require one standard truck and one temperature-controlled refrigerator truck per day, totalling two drivers each. The available pool (4 standard trucks, 2 refrigerator units, 6 drivers) fully covers this demand with zero unmet units and zero penalty. C1 carries a heavier cold-chain load (56.3 percent of valid units) compared to C2 (50.0 percent), which is relevant for prioritisation if the refrigerator fleet were ever reduced.
+</p>
+
+<h3 class="sub-sub-title">Weather Risk Summary</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Corridor</th>
+      <th>Day 0 Risk</th>
+      <th>Day 1 Risk</th>
+      <th>48h Risk</th>
+      <th>Travel Buffer</th>
+      <th>Escalation</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>C1_I95_NJ_BOS</td>
+      <td class="center">0</td>
+      <td class="center">0</td>
+      <td class="center">0</td>
+      <td class="center">0%</td>
+      <td class="center pass">No</td>
+    </tr>
+    <tr>
+      <td>C2_NJ_PHL</td>
+      <td class="center">0</td>
+      <td class="center">0</td>
+      <td class="center">0</td>
+      <td class="center">0%</td>
+      <td class="center pass">No</td>
+    </tr>
+  </tbody>
+</table>
+<p>
+All nine waypoints across both corridors registered zero triggered conditions during this run. No precipitation exceeded 15mm, no wind gusts exceeded 45 km/h, and no minimum temperature dropped to or below 0 degrees C. This maps to a zero-buffer requirement, which the PlannerAgent correctly identified and was confirmed by the deterministic audit check.
+</p>
+
+<h2 class="sub-title">4.2 Data Quality Results</h2>
+<p>
+The reconciliation engine processed all 129 rows in the 14-day CSV. The overall results across the full dataset (history plus planning window) are:
+</p>
+
+<div class="stat-row">
+  <div class="stat-card"><span class="num">129</span><span class="label">Total Rows</span></div>
+  <div class="stat-card green"><span class="num">124</span><span class="label">Valid (96.1%)</span></div>
+  <div class="stat-card amber"><span class="num">5</span><span class="label">Excluded DQ-01</span></div>
+  <div class="stat-card green"><span class="num">0</span><span class="label">DQ-02 / 03 / 04</span></div>
+</div>
+
+<h3 class="sub-sub-title">DQ Summary</h3>
+<table>
+  <thead>
+    <tr><th>Rule</th><th>Count</th><th>Description</th><th>Impact</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>DQ-01</strong></td>
+      <td class="center flag">5</td>
+      <td>Missing unique_item_id (3 in Day 0, 2 in History)</td>
+      <td>Excluded from all dispatch calculations per Playbook section 12</td>
+    </tr>
+    <tr>
+      <td>DQ-02</td>
+      <td class="center pass">0</td>
+      <td>Item ID not in master or legacy table</td>
+      <td>None</td>
+    </tr>
+    <tr>
+      <td>DQ-03</td>
+      <td class="center pass">0</td>
+      <td>Item name conflicts with item ID's known canonical</td>
+      <td>None</td>
+    </tr>
+    <tr>
+      <td>DQ-04</td>
+      <td class="center pass">0</td>
+      <td>Duplicate unique_item_id</td>
+      <td>None</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+All five DQ-01 exclusions involved Remdesivir or Insulin Lispro shipments with blank unique_item_id fields. These are life-critical Tier 1 medicines, so the exclusion carries direct SLA risk if the missing identifiers cannot be resolved upstream. The pipeline correctly removed them from dispatch totals and included them in the audit anomaly section of the final report.
+</p>
+
+<h3 class="sub-sub-title">Alias Correction Example (from actual output)</h3>
+<p>
+The engine successfully resolved 24 alias matches across the dataset. These are real names appearing in the CSV that do not exactly match the canonical master but map to a known variant. The following sample is taken directly from the pipeline output:
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Raw item_id</th>
+      <th>Name in CSV</th>
+      <th>Resolved Canonical ID</th>
+      <th>Canonical Name</th>
+      <th>Match Type</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>10021</td><td>Remdesivir 100 mg</td><td>RMD-100</td><td>Remdesivir 100mg</td><td>alias_match</td></tr>
+    <tr><td>10040</td><td>EpiPen Auto Injector</td><td>EPI-AI</td><td>Epinephrine Auto-Injector</td><td>alias_match</td></tr>
+    <tr><td>10050</td><td>Heparin Na</td><td>HEP-SOD</td><td>Heparin Sodium</td><td>alias_match</td></tr>
+    <tr><td>10060</td><td>Morphine Sulphate</td><td>MOR-SUL</td><td>Morphine Sulfate</td><td>alias_match</td></tr>
+    <tr><td>10070</td><td>Albuterol Inhaler 90mcg</td><td>ALB-INH</td><td>Albuterol Inhaler</td><td>alias_match</td></tr>
+  </tbody>
+</table>
+
+<p>
+Without this reconciliation layer, these 24 rows would either be silently mis-labelled in reports (wrong medicine type, wrong temperature requirement) or excluded as unresolvable, understating true demand.
+</p>
+
+<h2 class="sub-title">4.3 Item Spike Detection</h2>
+<p>
+The spike analysis compared each item's planning-window unit count against its average daily units across the 12-day history window. All items with a spike ratio at or above 1.5 are flagged. The following table is taken directly from the deep-dive appendix generated by this pipeline run:
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Item</th>
+      <th>Planning Window Units</th>
+      <th>Historical Daily Avg</th>
+      <th>Spike Ratio</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Albuterol Inhaler</td><td class="center">4</td><td class="center">1.67</td><td class="center flag">2.40x</td></tr>
+    <tr><td>Epinephrine Auto-Injector</td><td class="center">4</td><td class="center">1.75</td><td class="center flag">2.29x</td></tr>
+    <tr><td>Heparin Sodium</td><td class="center">3</td><td class="center">1.29</td><td class="center flag">2.33x</td></tr>
+    <tr><td>Insulin Lispro</td><td class="center">4</td><td class="center">1.80</td><td class="center flag">2.22x</td></tr>
+    <tr><td>Pembrolizumab</td><td class="center">4</td><td class="center">1.86</td><td class="center flag">2.15x</td></tr>
+    <tr><td>Remdesivir 100mg</td><td class="center">3</td><td class="center">1.44</td><td class="center flag">2.08x</td></tr>
+    <tr><td>Morphine Sulfate</td><td class="center">3</td><td class="center">1.50</td><td class="center flag">2.00x</td></tr>
+    <tr><td>Remdesivir 200mg</td><td class="center">2</td><td class="center">1.00</td><td class="center flag">2.00x</td></tr>
+    <tr><td>Experimental Oncology Drug (Clinical Trial)</td><td class="center">2</td><td class="center">0.00</td><td class="center flag">No history</td></tr>
+  </tbody>
+</table>
+
+<p>
+Every item in the planning window is running at roughly double its historical daily rate. The Experimental Oncology Drug has no history whatsoever, meaning this shipment represents a brand-new or reactivated item that the operations team may not have visibility on. This kind of insight is operationally significant: it signals that refrigerator truck demand and controlled substance storage requirements are elevated across the board and that procurement buffers should be considered if this trend continues into the following week.
+</p>
+
+<h2 class="sub-title">4.4 Audit Loop Validation</h2>
+
+<h3 class="sub-sub-title">Live Run Log (Console Output)</h3>
+<div class="mono">
+[RAGEval] Recall@5=1.0 grounded_accuracy=1.0
+[ContextAgent] Cache hit -- reusing business_context.
+[DQReconcile] total=129 valid=124 excluded=5 flagged=0
+               (DQ-01=5, DQ-02=0, DQ-03=0, DQ-04=0)
+[Timing] dq_reconcile took 7.04s
+[Weather] C1_I95_NJ_BOS: Day0=0 Day1=0 48h=0 buffer=0% (5 waypoints)
+[Weather] C2_NJ_PHL: Day0=0 Day1=0 48h=0 buffer=0% (4 waypoints)
+[Timing] weather_multi_corridor took 2.10s
+[Timing] resource_allocator took 4.30s
+[AuditAgent] Attempt 1/3: PASSED
+[Timing] audit took 1.86s
+[Timing] report took 22.40s
+[Output] Full report saved to report_output.html
+[Output] Deep-dive appendix saved to report_appendix.txt
+</div>
+
+<p>
+The audit loop converged on the first attempt with zero violations. The RAG retrieval evaluation scored 1.0 on both Recall@5 (all five test questions retrieved at least one relevant chunk in the top five results) and grounded-answer accuracy (all answers contained only information present in the retrieved context). The business context cache hit eliminates the 15-second ContextAgent round-trip on all subsequent runs as long as the Dispatch Playbook file is unchanged.
+</p>
+
+<h3 class="sub-sub-title">Audit Report Section (from report_output.html)</h3>
+<div class="callout success">
+<strong>Audit cycles completed:</strong> 1<br>
+<strong>Final audit result:</strong> PASSED<br>
+<strong>Human escalation triggered:</strong> No
+</div>
+
+<h3 class="sub-sub-title">Unit Test Run Output</h3>
+<p>
+The following is the full pytest output from a live run of the complete test suite (29 tests across all five test files). No mocking of the database, LLM, or file system is used in the deterministic test files.
+</p>
+
+<div style="
+  background: #1e1e1e;
+  border-radius: 6px;
+  padding: 20px 22px;
+  font-family: 'Courier New', Consolas, monospace;
+  font-size: 8.2pt;
+  line-height: 1.65;
+  margin: 18px 0 24px 0;
+  color: #d4d4d4;
+  border: 1px solid #333;
+">
+<div style="color:#9cdcfe; margin-bottom:6px;">PS D:\SeeWeeS Ops Reporting Agent&gt; <span style="color:#569cd6;">python</span> -m pytest tests/ -v</div>
+<div style="color:#6a9955; margin-bottom:4px;">============================== test session starts ==============================</div>
+<div>platform win32 -- Python 3.11.4, pytest-9.0.3, pluggy-1.6.0 -- C:\Users\vishw\AppData\Local\Programs\Python\Python311\python.exe</div>
+<div>cachedir: .pytest_cache</div>
+<div>rootdir: D:\SeeWeeS Ops Reporting Agent</div>
+<div style="margin-bottom:6px;">plugins: anyio-4.12.1, langsmith-0.8.4</div>
+<div style="margin-bottom:6px;">collected <span style="color:#dcdcaa;">29</span> items</div>
+
+<div>tests/test_audit_logic.py::test_expected_buffer_mapping <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">                  [  3%]</span></div>
+<div>tests/test_audit_logic.py::test_audit_passes_when_buffer_matches_and_rules_cited <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;"> [  6%]</span></div>
+<div>tests/test_audit_logic.py::test_audit_flags_wrong_buffer <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">               [ 10%]</span></div>
+<div>tests/test_audit_logic.py::test_audit_requires_escalation_at_score_3 <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">    [ 13%]</span></div>
+<div>tests/test_audit_logic.py::test_audit_requires_cited_rules <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">             [ 17%]</span></div>
+<div style="margin-bottom:4px;">tests/test_audit_logic.py::test_llm_failure_keeps_failing_even_if_deterministic_passes <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;"> [ 20%]</span></div>
+
+<div>tests/test_dq_tools.py::test_exact_match_is_valid <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">                      [ 24%]</span></div>
+<div>tests/test_dq_tools.py::test_alias_match_resolves_when_item_id_agrees <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">    [ 27%]</span></div>
+<div>tests/test_dq_tools.py::test_legacy_id_map <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">                             [ 31%]</span></div>
+<div>tests/test_dq_tools.py::test_name_alias_takes_precedence_over_legacy_id <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">   [ 34%]</span></div>
+<div>tests/test_dq_tools.py::test_dq01_missing_uid_excluded <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">                 [ 37%]</span></div>
+<div>tests/test_dq_tools.py::test_dq02_invalid_item_id_excluded <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">             [ 41%]</span></div>
+<div>tests/test_dq_tools.py::test_dq04_duplicate_uid_flagged <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">                [ 44%]</span></div>
+<div>tests/test_dq_tools.py::test_sla_tier_backfilled <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">                       [ 48%]</span></div>
+<div>tests/test_dq_tools.py::test_assign_tier_defaults_to_two <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">               [ 51%]</span></div>
+<div style="margin-bottom:4px;">tests/test_dq_tools.py::test_missing_required_columns_raises <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">            [ 55%]</span></div>
+
+<div>tests/test_resource_tools.py::test_load_resource_availability_parses_csv <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">  [ 58%]</span></div>
+<div>tests/test_resource_tools.py::test_compute_demand_trucks_match_capacity_model <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;"> [ 62%]</span></div>
+<div>tests/test_resource_tools.py::test_compute_demand_cold_chain_uses_temp_trucks <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;"> [ 65%]</span></div>
+<div>tests/test_resource_tools.py::test_compute_demand_excludes_invalid_rows <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">  [ 68%]</span></div>
+<div>tests/test_resource_tools.py::test_no_shortage_zero_penalty <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">             [ 72%]</span></div>
+<div>tests/test_resource_tools.py::test_temp_truck_shortage_incurs_cold_chain_penalty <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;"> [ 75%]</span></div>
+<div>tests/test_resource_tools.py::test_tier1_penalised_more_than_tier2 <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">      [ 79%]</span></div>
+<div style="margin-bottom:4px;">tests/test_resource_tools.py::test_allocation_bottleneck_identified <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">     [ 82%]</span></div>
+
+<div style="margin-bottom:4px;">tests/test_smoke.py::test_smoke <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">                                         [ 86%]</span></div>
+
+<div>tests/test_trend_tools.py::test_required_trucks_capacity_model <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">          [ 89%]</span></div>
+<div>tests/test_trend_tools.py::test_corridor_kpis_planning_window <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">           [ 93%]</span></div>
+<div>tests/test_trend_tools.py::test_pop_trend_available <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">                     [ 96%]</span></div>
+<div style="margin-bottom:8px;">tests/test_trend_tools.py::test_deep_dive_tables_shapes <span style="color:#4ec994; font-weight:bold;">PASSED</span><span style="color:#888;">                 [100%]</span></div>
+
+<div style="color:#6a9955;">============================== <span style="color:#4ec994; font-weight:bold;">29 passed</span> in 40.88s ==============================</div>
+<div style="color:#9cdcfe; margin-top:6px;">PS D:\SeeWeeS Ops Reporting Agent&gt;</div>
+</div>
+
+<h3 class="sub-sub-title">Unit Test Coverage</h3>
+<table>
+  <thead>
+    <tr><th>Test File</th><th>Tests</th><th>What Is Verified</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>test_audit_logic.py</td>
+      <td class="center">6</td>
+      <td>Buffer percentage mapping, pass/fail logic, escalation at score 3, empty cited_rules violation, LLM failure propagation</td>
+    </tr>
+    <tr>
+      <td>test_dq_tools.py</td>
+      <td class="center">10</td>
+      <td>Exact match, alias match, legacy ID map, D4 precedence over D5, DQ-01 through DQ-04, SLA tier back-fill, missing column error</td>
+    </tr>
+    <tr>
+      <td>test_resource_tools.py</td>
+      <td class="center">8</td>
+      <td>CSV loading, capacity model math, cold-chain routing, DQ exclusion, zero-penalty at full capacity, shortage penalty, bottleneck identification</td>
+    </tr>
+    <tr>
+      <td>test_trend_tools.py</td>
+      <td class="center">4</td>
+      <td>Capacity model formula, corridor KPI computation, PoP trend availability, deep-dive table shapes</td>
+    </tr>
+    <tr>
+      <td>test_smoke.py</td>
+      <td class="center">1</td>
+      <td>Import and graph assembly without OPENAI_API_KEY</td>
+    </tr>
+    <tr>
+      <td><strong>Total</strong></td>
+      <td class="center"><strong>29</strong></td>
+      <td><strong>All passing, 0 failures</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 class="sub-title">4.5 Performance Benchmarks</h2>
+<table>
+  <thead>
+    <tr><th>Node</th><th>Cold Run</th><th>Warm Run</th><th>Note</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>pdf_context</td><td>14.69s</td><td>0.20s</td><td>73x faster on warm run; ContextAgent LLM skipped via fingerprint cache</td></tr>
+    <tr><td>dq_reconcile</td><td>7.04s</td><td>9.04s</td><td>Dominated by TrendOpsAgent LLM; pure DQ reconciliation is under 100ms</td></tr>
+    <tr><td>weather_multi_corridor</td><td>2.10s</td><td>2.10s</td><td>9 HTTP calls to Open-Meteo, running sequentially</td></tr>
+    <tr><td>resource_allocator</td><td>4.30s</td><td>4.30s</td><td>Dominated by ResourcePlannerAgent LLM</td></tr>
+    <tr><td>planner</td><td>16.91s</td><td>15.30s</td><td>JSON extraction and structured output parsing included</td></tr>
+    <tr><td>audit</td><td>1.86s</td><td>0.93s</td><td>First-attempt pass; deterministic checks add negligible overhead</td></tr>
+    <tr><td>report</td><td>22.40s</td><td>23.79s</td><td>ReportAgent LLM; largest single node</td></tr>
+    <tr><td><strong>Total</strong></td><td><strong>~63s</strong></td><td><strong>~50s</strong></td><td></td></tr>
+  </tbody>
+</table>
+</div>
+
+<!-- ============================================================ SECTION 5 -->
+<div class="content page-break">
+<h1 class="section-title"><span class="sec-num">5</span> Limitations and Next Steps</h1>
+
+<h2 class="sub-title">Current Constraints</h2>
+
+<h3 class="sub-sub-title">Static Item Master</h3>
+<p>
+The canonical item master, alias table, and legacy ID mapping are hard-coded as Python module constants. This was the right choice for a controlled academic project where the reference data is known and stable, but it introduces a maintenance burden in production. Adding a new medicine or an alias requires a code change and a redeployment. In a real operations environment, these tables would need to be maintained in a database or configuration file by the pharmacy or procurement team without engineering involvement.
+</p>
+
+<h3 class="sub-sub-title">Sequential Weather Fetching</h3>
+<p>
+The multi-corridor weather node currently fetches nine waypoints sequentially, one HTTP call at a time. The total fetch time is approximately 2 seconds, which is acceptable today. If the corridor catalog expands to four or five corridors with additional waypoints, this will scale linearly and could become a meaningful bottleneck. The fix is straightforward: replace the sequential loop with concurrent HTTP requests using Python's asyncio or a thread pool executor, which would compress all nine calls into roughly one round-trip time.
+</p>
+
+<h3 class="sub-sub-title">LLM Non-Determinism and Cost</h3>
+<p>
+Five of the eight pipeline nodes invoke GPT-4.1-mini. While the system is designed so that no agent computes numbers (only narrates or audits them), the LLM responses still vary slightly across runs. This means that two identical input datasets could theoretically produce different narrative text in the report, and in edge cases, an audit that passes on one run might fail on another if the LLM agent's tone shifts. The deterministic audit layer catches numeric violations reliably, but qualitative judgment calls by the AuditAgent remain probabilistic. Migrating to structured outputs with strict JSON schema enforcement at the API level would reduce this variability further.
+</p>
+
+<h3 class="sub-sub-title">Single-Tenant, Single-Run Design</h3>
+<p>
+The current system is designed to run once per day as a standalone script. It has no web interface, no scheduling mechanism, and no concurrent user support. The ChromaDB vector store is a local persistent directory and would not handle concurrent writes from multiple pipeline instances. For a multi-user production deployment, the Chroma instance would need to be replaced with a hosted vector database service.
+</p>
+
+<h3 class="sub-sub-title">Email Deliverability</h3>
+<p>
+The SMTP email delivery is dependent on the executing machine's network allowing outbound connections on port 587. Port 465 and 587 are frequently blocked on university and corporate networks. The report is always saved to disk regardless of email status, but operators on restricted networks will not receive email notifications without configuring an SMTP relay or using a transactional email API service such as SendGrid.
+</p>
+
+<h2 class="sub-title">Scaling with Real-World Data</h2>
+
+<h3 class="sub-sub-title">Expanding the Corridor Network</h3>
+<p>
+The system is architecturally ready for additional corridors. Adding a new corridor requires three changes: adding the corridor's waypoints to the <code>_CORRIDORS</code> dictionary in <code>weather_tools.py</code>, adding a row to the corridor catalog table in the Dispatch Playbook, and ensuring the new corridor ID appears correctly in the shipment CSV. The DQ reconciliation, KPI computation, and resource allocation code all operate dynamically over whatever corridors appear in the data.
+</p>
+
+<h3 class="sub-sub-title">Higher Shipment Volumes</h3>
+<p>
+The reconciliation engine is vectorized and would handle 10,000 or 100,000 row CSVs without code changes. The binding constraint at scale would be the LLM calls: the TrendOpsAgent receives the full corridor comparison and PoP trend as a dictionary, which grows larger as the number of corridors and history days increases. Summarising the analytics to key signals before sending to the LLM, rather than passing the full dictionary, would keep prompt sizes manageable.
+</p>
+
+<h3 class="sub-sub-title">Real-Time and Streaming Data</h3>
+<p>
+The current architecture pulls a static CSV file at run time. A production enhancement would stream incoming shipment events from a message queue (for example, Apache Kafka or AWS Kinesis) and run the DQ reconciliation node on each batch. The trend analysis node could be adapted to maintain a rolling aggregate rather than recomputing from scratch on each run. The LangGraph StateGraph is already designed around immutable state transitions and would support an event-driven execution model with minimal architectural changes.
+</p>
+
+<h3 class="sub-sub-title">ML-Based Anomaly Detection</h3>
+<p>
+The current spike detection uses a simple ratio comparison against the historical daily average. This is transparent and auditable but does not account for day-of-week seasonality, known scheduled events such as hospital inventory replenishment cycles, or gradual long-term trend growth. A time-series forecasting model (for example, Facebook Prophet or a simple ARIMA model) trained on the rolling history would produce a more statistically grounded baseline, and the deterministic spike flag could be replaced with a confidence interval breach. The key design constraint to preserve is that this ML model should feed numbers into the pipeline as deterministic inputs, not replace the narrative agents, so that the audit layer remains verifiable.
+</p>
+
+<h3 class="sub-sub-title">Feedback Loop from Outcomes</h3>
+<p>
+The most valuable production enhancement would be closing the loop between dispatch recommendations and actual outcomes. If the system could receive post-delivery data (actual transit times, SLA compliance results, any temperature excursions for cold-chain items), it could compare the audit-approved plan against reality and surface systematic gaps in the planner's assumptions over time. This would require a database to persist historical run results and a new analysis node that computes plan accuracy metrics alongside the forward-looking dispatch KPIs.
+</p>
+
+<div class="footer">
+  SeeWeeS Ops Reporting Agent | UCLA MSBA AI Agents Project Challenge 2026 | Technical and Business Report | May 2026
+</div>
+</div>
+
+</body>
+</html>

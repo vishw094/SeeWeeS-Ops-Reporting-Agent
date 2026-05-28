@@ -16,7 +16,8 @@ PROGRESS
   [DONE]    Cross-project merge — adopted 4 stronger ideas from a peer build
             (deterministic audit, RAG eval, deep-dive appendix, unit tests)
   [DONE]    Data-leakage audit — secrets clean, analytics leak-free
-  [NEXT]    Feature 5 — Multi-Region / Multi-Day Resource Planning
+  [DONE]    Feature 5 — Multi-Region / Multi-Day Resource Planning
+            (9-waypoint multi-corridor weather + penalty-minimising resource allocator)
 
 ================================================================================
 POST-FEATURE-3 MERGE (2026-05-21) — what changed and why
@@ -120,8 +121,8 @@ ARCHITECTURE GAPS STATUS
   [DONE]    pdf_tools.py: fingerprint cache, .md+.pdf loaders, business_context memoization
   [DONE]    tracing.py: API-key probe disables tracing on failure (no background segfaults)
   [DONE]    main.py: switched to multi-corridor CSV + Dispatch Playbook .md
-  [PENDING] weather_tools.py: single lat/lon → per-corridor, per-waypoint (9 total)
-  [PENDING] resource_tools.py: resource allocation with penalty model (new file)
+  [DONE]    weather_tools.py: single lat/lon → per-corridor, per-waypoint (9 total)
+  [DONE]    resource_tools.py: resource allocation with penalty model (new file)
 
 ================================================================================
 TARGET ARCHITECTURE (LangGraph Graph)
@@ -375,11 +376,11 @@ IMPLEMENTATION ORDER — STATUS
   [DONE]  Step 6: src/agents.py — run_trend_agent() + TREND_OPS_PROMPT
   [DONE]  Step 7: src/graph.py — replace node_csv_analysis with node_dq_reconcile
   [DONE]  Step 8: src/main.py — update csv_path to multi-corridor CSV
-  [PEND]  Step 9: src/tools/weather_tools.py — rewrite for 9 waypoints, 2 corridors
-  [PEND]  Step 10: src/tools/resource_tools.py — demand + penalty-minimizing allocator
-  [PEND]  Step 11: src/agents.py — run_resource_planner_agent() + RESOURCE_PLANNER_PROMPT
-  [PEND]  Step 12: src/graph.py — parallel fan-out, resource allocator node, final wiring
-  [PEND]  Step 13: src/main.py — add resource_csv_path, final end-to-end smoke test
+  [DONE]  Step 9: src/tools/weather_tools.py — rewrite for 9 waypoints, 2 corridors
+  [DONE]  Step 10: src/tools/resource_tools.py — demand + penalty-minimizing allocator
+  [DONE]  Step 11: src/agents.py — run_resource_planner_agent() + RESOURCE_PLANNER_PROMPT
+  [DONE]  Step 12: src/graph.py — parallel fan-out, resource allocator node, final wiring
+  [DONE]  Step 13: src/main.py — add resource_csv_path, final end-to-end smoke test
 
 ================================================================================
 KEY DESIGN DECISIONS & RATIONALE

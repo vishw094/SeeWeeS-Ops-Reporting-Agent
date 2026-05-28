@@ -95,6 +95,29 @@ AUDIT_PROMPT = ChatPromptTemplate.from_messages([
      "{{\"passed\": true, \"violations\": [], \"severity\": \"low\"}}")
 ])
 
+RESOURCE_PLANNER_PROMPT = ChatPromptTemplate.from_messages([
+    ("system",
+     "You are ResourcePlannerAgent. You receive a deterministic allocation plan computed from "
+     "the SeeWeeS penalty model (§13.2: Tier1=100pts, Tier2=40pts, cold-chain=+80pts, delay=10pts). "
+     "Your job is to translate the numeric plan into an executive-ready narrative. "
+     "DO NOT invent numbers. Quote only the values present in the inputs. "
+     "Highlight which corridor and day is most resource-constrained, what the bottleneck resource is, "
+     "and what the total penalty exposure means for SLA commitments."),
+    ("user",
+     "Resource availability (by day):\n{resource_availability}\n\n"
+     "Demand per corridor per day:\n{resource_demand}\n\n"
+     "Allocation result (penalty-minimised):\n{resource_allocation}\n\n"
+     "Weather risk by corridor:\n{weather_by_corridor}\n\n"
+     "Return a markdown brief with these sections:\n"
+     "1. **Resource Summary** — total penalty score, total unmet units, and bottleneck resource.\n"
+     "2. **By-Corridor Plan** — for C1 and C2, state allocated vs unmet units per day, trucks assigned, and penalty.\n"
+     "3. **SLA Risk Flags** — explicitly call out any Tier 1 SLA units left unmet and the penalty consequence.\n"
+     "4. **Weather Interaction** — for corridors with risk_48h > 0, note how weather buffers interact with "
+     "available capacity.\n"
+     "5. **Recommended Actions** — 3-5 bullets for the PlannerAgent to incorporate into the 48h dispatch plan."
+     )
+])
+
 REPORT_PROMPT = ChatPromptTemplate.from_messages([
     ("system",
      "You are ReportAgent. Produce a crisp HTML report for leadership. Use headings and bullets. "

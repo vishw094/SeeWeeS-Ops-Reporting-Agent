@@ -496,5 +496,116 @@ train/test contamination.
        rigorous benchmark.
 
 ================================================================================
+10. FEATURE 5 — Multi-Region / Multi-Day Resource Planning  (2026-05-21)
+================================================================================
+
+10.1  SCOPE
+     Turn the single-point weather fetch and the missing resource layer into a
+     full multi-corridor planning system grounded in Playbook §5-6 (weather),
+     §7 (capacity), and §13 (resource allocation / penalty model).
+
+10.2  FILES ADDED / CHANGED
+
+  src/tools/weather_tools.py        REWRITTEN
+    - _CORRIDORS dict: authoritative waypoints from §3.2
+        C1_I95_NJ_BOS: 5 waypoints (Newark, Bronx, New Haven, Providence, Boston)
+        C2_NJ_PHL:     4 waypoints (Newark, New Brunswick, Trenton, Philadelphia)
+    - _fetch_waypoint_daily(): single Open-Meteo call per waypoint (daily only,
+      no hourly — reduces response payload by ~70%).
+    - _waypoint_day_score(): scores one waypoint on one forecast day against the
+      3 §6.1 triggers (precip≥15, gusts≥45, tmin≤0).
+    - get_corridor_weather(): fetches all waypoints, takes MAX score per day,
+      MAX across Day0/Day1 for 48h risk, maps to travel_buffer via §5.2.
+    - get_all_corridors_weather(): calls get_corridor_weather for both corridors.
+    - worst_corridor_risk(): picks the max-48h-risk corridor for the
+      deterministic audit's risk_score_0_3 check — keeps audit backward-compat.
+    - Legacy get_weather_forecast + derive_dispatch_weather_risk preserved but
+      unused in the live graph.
+
+  src/tools/resource_tools.py       NEW
+    - load_resource_availability(): reads Resource_availability_48h.csv →
+      {day: {resource_type: count}}.
+    - compute_demand(): iterates valid (DQ-passing) reconciled rows, partitions
+      into cold-chain vs room-temp per corridor per day, applies §7.2 capacity
+      model (ceil(volume * 1.10 / 10)) for trucks and drivers.  Excludes
+      DQ-invalid rows exactly as §12 requires.
+    - allocate_resources(): greedy penalty-minimising allocator.
+        Slot priority (§13.2): Tier1-cold (180pts) → Tier1-room (100pts) →
+                                Tier2-cold (120pts) → Tier2-room (40pts) →
+                                non-SLA delay (10pts).
+        Per-day: compute constraining_ratio = min(pool/needed) across
+        std-trucks, temp-trucks, drivers.  Scale all corridors uniformly then
+        attribute unmet units to highest-penalty slots first.
+        Bottleneck resource identified and stored in summary_by_day.
+
+  src/prompts.py                    MODIFIED
+    - RESOURCE_PLANNER_PROMPT: 5-section brief (Resource Summary, By-Corridor
+      Plan, SLA Risk Flags, Weather Interaction, Recommended Actions).
+      Same "DO NOT invent numbers" constraint as TREND_OPS_PROMPT.
+
+  src/agents.py                     MODIFIED
+    - run_resource_planner_agent(): passes availability, demand, allocation,
+      and weather_by_corridor to RESOURCE_PLANNER_PROMPT.
+
+  src/graph.py                      MODIFIED
+    - AppState: added resource_csv_path, weather_risk_by_corridor,
+      resource_availability, resource_demand, resource_allocation,
+      resource_insights.
+    - node_weather_multi_corridor: replaces node_weather.  Fetches all 9
+      waypoints, sets weather_risk_by_corridor (full per-corridor detail)
+      and weather_risk (worst-corridor, for audit backward-compat).
+    - node_resource_allocator: lazy-imports pandas + resource_tools (same
+      Windows DLL-safety pattern as node_dq_reconcile).  Loads CSV, runs
+      compute_demand (planning_days only), runs allocate_resources, calls
+      run_resource_planner_agent for narrative.
+    - node_planner: merges ops_insights + resource_insights into
+      combined_insights; passes weather_risk_by_corridor (full) to planner.
+    - node_report: includes allocation penalty summary in anomaly_highlights;
+      passes weather_risk_by_corridor to ReportAgent for per-corridor section.
+    - build_graph():
+        PARALLEL FAN-OUT: pdf_context → [dq_reconcile, weather_multi_corridor]
+        FAN-IN: [dq_reconcile, weather_multi_corridor] → resource_allocator
+        LangGraph 0.2+ merges concurrent state updates automatically.
+
+  src/main.py                       MODIFIED
+    - Added resource_csv_path: "data-for-enhancement/Resource_availability_48h.csv"
+
+  tests/test_resource_tools.py      NEW (8 tests, all passing)
+    - load_resource_availability round-trip
+    - compute_demand: capacity-model math, cold-chain routing, DQ exclusion
+    - allocate_resources: zero-penalty at full capacity, cold-chain shortage
+      penalty, Tier1 > Tier2 penalty, bottleneck identification
+
+10.3  CHALLENGES AND FIXES
+
+  Parallel fan-out state merge:
+    LangGraph 0.2+ executes parallel branches in separate threads and deep-merges
+    their returned state dicts before the fan-in node runs.  No extra code needed
+    beyond adding two `add_edge` calls from pdf_context.  The key non-obvious
+    requirement: both branches must return disjoint state keys so the merge
+    doesn't silently drop updates.  (dq_reconcile owns dq_report/canonical_df_json;
+    weather_multi_corridor owns weather_risk_by_corridor/weather_risk — no overlap.)
+
+  Deterministic audit backward-compat:
+    apply_deterministic_audit_checks reads state["weather_risk"]["risk_score_0_3"].
+    With multi-corridor weather, we now always populate weather_risk with
+    worst_corridor_risk() — the corridor with the highest 48h risk score.
+    This means the audit still operates on a single scalar risk_score, but that
+    scalar now reflects the correct worst-case across all corridors.
+
+  resource_allocator lazy import:
+    compute_demand reads the reconciled DataFrame from canonical_df_json via
+    pd.read_json.  This import happens inside node_resource_allocator body
+    (not at module level) to stay safe on Windows chromadb DLL boundary.
+
+10.4  FINAL TEST SUITE
+     29 tests, 0 failures:
+       test_audit_logic.py    6 tests
+       test_dq_tools.py      10 tests
+       test_resource_tools.py 8 tests
+       test_trend_tools.py    4 tests
+       test_smoke.py          1 test
+
+================================================================================
 End of work log.
 ================================================================================

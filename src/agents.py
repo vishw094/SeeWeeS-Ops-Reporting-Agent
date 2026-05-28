@@ -8,6 +8,7 @@ from prompts import (
     TREND_OPS_PROMPT,
     PLANNER_PROMPT,
     AUDIT_PROMPT,
+    RESOURCE_PLANNER_PROMPT,
     REPORT_PROMPT,
 )
 
@@ -128,6 +129,20 @@ def run_audit_agent(
             "violations": [f"AuditAgent parse error — raw response: {raw[:300]}"],
             "severity": "high",
         }
+
+def run_resource_planner_agent(
+    resource_availability: Dict[str, Any],
+    resource_demand: Dict[str, Any],
+    resource_allocation: Dict[str, Any],
+    weather_by_corridor: Dict[str, Any],
+) -> str:
+    return _get_llm().invoke(RESOURCE_PLANNER_PROMPT.format_messages(
+        resource_availability=resource_availability,
+        resource_demand=resource_demand,
+        resource_allocation=resource_allocation,
+        weather_by_corridor=weather_by_corridor,
+    )).content
+
 
 def run_report_agent(
     business_context: str,
